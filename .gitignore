@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Training outputs, generated data, and exported models stay local.
+artifacts/**
+!artifacts/.gitkeep
+*.pt
+*.onnx
+*.log
+
+.DS_Store
+Thumbs.db

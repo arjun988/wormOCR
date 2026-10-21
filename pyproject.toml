@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wormocr"
+version = "0.1.0"
+description = "Small, CPU-friendly open-source OCR for text lines and simple pages."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "arjun shukla" }]
+keywords = ["ocr", "ctc", "crnn", "pytorch", "onnx"]
+dependencies = [
+    "numpy>=1.26",
+    "pillow>=10",
+    "pyyaml>=6",
+    "torch>=2.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+export = ["onnx>=1.16", "onnxruntime>=1.18"]
+pdf = ["pypdfium2>=4"]
+
+[project.urls]
+Homepage = "https://github.com/arjun988/wormOCR"
+Repository = "https://github.com/arjun988/wormOCR"
+
+[project.scripts]
+wormocr = "wormocr.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wormocr = ["py.typed"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,32 @@
+seed: 1337
+device: cpu
+model:
+  name: micro
+  image_height: 32
+  channels: [32, 48, 96, 128]
+  separable: true
+  rnn_hidden: 192
+  rnn_layers: 2
+  rnn_dropout: 0.05
+  proj_size: 192
+data:
+  train_samples: 8000
+  val_samples: 800
+  font_size_min: 16
+  font_size_max: 32
+  max_chars: 36
+  augment: true
+  max_width: 1024
+train:
+  epochs: 12
+  batch_size: 32
+  lr: 0.001
+  weight_decay: 0.01
+  grad_clip: 5.0
+  warmup_steps: 100
+  early_stopping_patience: 5
+  checkpoint_dir: artifacts/checkpoints/micro
+  log_every: 20
+  save_every: 5
+  amp: false
+  num_workers: 0

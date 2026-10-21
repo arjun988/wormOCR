@@ -1,0 +1,33 @@
+seed: 7
+device: cpu
+model:
+  name: debug
+  image_height: 32
+  channels: [16, 32, 48, 64]
+  separable: true
+  rnn_hidden: 64
+  rnn_layers: 1
+  rnn_dropout: 0.0
+  proj_size: 64
+data:
+  train_samples: 64
+  val_samples: 16
+  font_size_min: 18
+  font_size_max: 28
+  max_chars: 24
+  augment: true
+  max_width: 768
+train:
+  epochs: 1
+  batch_size: 8
+  lr: 0.002
+  weight_decay: 0.0
+  grad_clip: 5.0
+  warmup_steps: 0
+  max_steps: 30
+  early_stopping_patience: 0
+  checkpoint_dir: artifacts/checkpoints/debug
+  log_every: 5
+  save_every: 0
+  amp: false
+  num_workers: 0

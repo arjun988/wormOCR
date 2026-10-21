@@ -1,0 +1,32 @@
+seed: 1337
+device: cpu
+model:
+  name: small
+  image_height: 32
+  channels: [64, 128, 256, 320]
+  separable: false
+  rnn_hidden: 576
+  rnn_layers: 2
+  rnn_dropout: 0.1
+  proj_size: 512
+data:
+  train_samples: 8000
+  val_samples: 800
+  font_size_min: 15
+  font_size_max: 34
+  max_chars: 48
+  augment: true
+  max_width: 1280
+train:
+  epochs: 8
+  batch_size: 16
+  lr: 0.0008
+  weight_decay: 0.01
+  grad_clip: 5.0
+  warmup_steps: 150
+  early_stopping_patience: 4
+  checkpoint_dir: artifacts/checkpoints/small
+  log_every: 20
+  save_every: 2
+  amp: false
+  num_workers: 0
