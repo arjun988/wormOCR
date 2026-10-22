@@ -23,7 +23,7 @@ def test_predict_without_weights_fails(tmp_path, monkeypatch):
     from PIL import Image
 
     Image.new("L", (32, 16), 255).save(image)
-    assert main(["predict", "--image", str(image), "--model", "tiny"]) == 1
+    assert main(["predict", "--image", str(image), "--model", "not-a-trained-variant"]) == 1
 
 
 def test_cli_smoke_evaluate_and_generate(tmp_path):

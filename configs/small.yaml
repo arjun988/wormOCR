@@ -3,30 +3,36 @@ device: cpu
 model:
   name: small
   image_height: 32
+  width_stride: 4
   channels: [64, 128, 256, 320]
   separable: false
-  rnn_hidden: 576
+  rnn_hidden: 512
   rnn_layers: 2
-  rnn_dropout: 0.1
+  rnn_dropout: 0.05
   proj_size: 512
 data:
-  train_samples: 8000
+  train_samples: 400000
   val_samples: 800
-  font_size_min: 15
-  font_size_max: 34
-  max_chars: 48
+  font_size_min: 14
+  font_size_max: 36
+  max_chars: 32
   augment: true
   max_width: 1280
 train:
-  epochs: 8
-  batch_size: 16
+  epochs: 1
+  max_steps: 20000
+  max_minutes: 300
+  batch_size: 32
   lr: 0.0008
-  weight_decay: 0.01
+  weight_decay: 0.0001
   grad_clip: 5.0
-  warmup_steps: 150
-  early_stopping_patience: 4
+  warmup_steps: 500
+  ema_decay: 0.999
+  eval_every: 1000
+  early_stopping_patience: 0
   checkpoint_dir: artifacts/checkpoints/small
-  log_every: 20
-  save_every: 2
+  log_every: 100
+  save_every: 0
   amp: false
-  num_workers: 0
+  num_workers: 6
+  torch_threads: 12

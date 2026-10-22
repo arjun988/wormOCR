@@ -1,148 +1,314 @@
 # wormOCR
 
-Small, local OCR for printed English text. The recognizer is a convolutional encoder, a bidirectional GRU, and a CTC decoder. It runs on CPU. It does not call a cloud API, and importing it does not download weights.
+**A small, local OCR engine for printed English text.**
 
-This repository is an early, working system. The software can train, evaluate, export, and recognize text. A checkpoint produced by a short synthetic run is not a competitive document OCR model. Maturity of any checkpoint is stored inside the file and printed when you load a smoke-tested or untrained model.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c.svg)](https://pytorch.org)
+[![ONNX](https://img.shields.io/badge/export-ONNX-005ced.svg)](https://onnx.ai)
 
-## What works
-
-- English printed text lines, including letters, digits, punctuation, and case.
-- Variable-width lines, batched CPU inference, and greedy CTC decoding. Beam search is optional.
-- Synthetic data generation, a PyTorch training loop, checkpoints, and resume.
-- CER, WER, exact match, and an error report.
-- A classical page pass: line finding, optional deskew, and reading order for simple one- and two-column pages.
-- ONNX export and dynamic INT8 quantization when `onnx` and `onnxruntime` are installed.
-- PDF rendering when the optional package `pypdfium2` is installed.
-
-## What does not work yet
-
-- Competitive accuracy on real scans, photos, or forms. The training run in this environment was short and synthetic.
-- Handwriting, tables, and languages other than English.
-- A learned text detector. Page layout uses projection profiles.
-- Shipped weights. You train locally, or you pass a checkpoint you already have.
-
-## Install
-
-Python 3.10 or newer. PyTorch, NumPy, Pillow, and PyYAML are required. CUDA is optional; the code uses the CPU when PyTorch cannot see a GPU.
-
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev,export]"
-```
-
-On macOS or Linux, activate with `source .venv/bin/activate`.
-
-Without an editable install, from the repository root:
-
-```bash
-set PYTHONPATH=src
-python -m wormocr info
-```
-
-`wormocr info` prints the interpreter, whether CUDA is available, how many Latin fonts were found, and the parameter counts of the three configs. It does not download anything.
-
-## Recognize a line
-
-Train or place a checkpoint first. This example expects one at `artifacts/checkpoints/tiny/best.pt`.
+wormOCR reads printed text from images, scans, and PDFs on an ordinary CPU. The recognizer, **wormOCR tiny**, has **2.17 million parameters** (8.7 MB of weights). It runs entirely on your machine: there is no cloud API, and importing the package never downloads anything.
 
 ```python
 from wormocr import OCR
 
-ocr = OCR(model="tiny")  # or OCR(checkpoint="artifacts/checkpoints/tiny/best.pt")
-result = ocr.predict("document.png")
-print(result.text)
+ocr = OCR(model="tiny")
+print(ocr.predict("invoice_line.png").text)
+# Invoice #1042 Total: $18.50
 ```
 
-`OCR(model="tiny")` looks for `artifacts/checkpoints/tiny/best.pt` in the current directory or the repository. If that file is missing, it raises an error. It will not download a model.
+> **Status: early release (v0.1.0).** The model is accurate on clean printed lines and usable on simple documents. Real scanned forms are much harder, and the numbers below show the gap. See [Limitations](#limitations).
 
-`result.lines` contains text, a confidence, a bounding box in the original image (`x, y, width, height`), and reading order. `mode="line"` skips page layout. `mode="page"` always runs line detection. `mode="auto"` treats a short, wide image as a single line.
+---
+
+## Contents
+
+- [Highlights](#highlights)
+- [Model](#model)
+- [Results](#results)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Training](#training)
+- [Evaluation, export, and benchmarks](#evaluation-export-and-benchmarks)
+- [How it works](#how-it-works)
+- [Project layout](#project-layout)
+- [Limitations](#limitations)
+- [Contributing](#contributing)
+- [Citation](#citation)
+- [License](#license)
+
+## Highlights
+
+- **Small.** 2,174,880 parameters, an 8.7 MB weights file, and an 8.7 MB ONNX graph.
+- **Fast on CPU.** About 14 ms per text line end to end (preprocessing, model, and decoding) on a laptop CPU, with no GPU needed for inference.
+- **Fully local.** No network calls, no telemetry, and no hidden weight downloads.
+- **Trained from scratch.** Every training image is rendered on the fly from fonts already on your machine. No third-party OCR weights or proprietary datasets are used.
+- **Complete toolkit.** One package handles training, resuming, evaluation (CER, WER, exact match), error analysis, ONNX export, benchmarking, page layout, and PDF input.
+- **Honest metadata.** Each checkpoint records how it was trained (`smoke-tested`, `debug-trained`, or `trained`), and wormOCR warns you when you load an immature one.
+
+## Model
+
+| | wormOCR tiny |
+| --- | --- |
+| Parameters | 2,174,880 (2.17M) |
+| Weights file (`best_weights.pt`, FP32) | 8.7 MB |
+| ONNX (FP32) | 8.7 MB |
+| Architecture | CRNN: depthwise-separable CNN, then a 2-layer BiGRU (256 hidden units), then a CTC head |
+| Input | Grayscale line, height 32 px, variable width |
+| Output stride | 4 input columns per output frame |
+| Character set | 95 printable ASCII characters (letters, digits, punctuation, space) plus the CTC blank |
+| Training data | Synthetic only: about 2.4 million rendered lines |
+| Maturity label | `trained` |
+
+## Results
+
+All numbers come from a single local run on 22 October 2026. Full reports are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+### Accuracy
+
+| Test set | Lines | CER | WER | Exact match |
+| --- | ---: | ---: | ---: | ---: |
+| Synthetic held-out lines (clean, unseen seed) | 800 | **0.70%** | 3.7% | 96.0% |
+| [FUNSD](https://guillaumejaume.github.io/FUNSD/) test split, real scanned forms (word crops) | 8,526 | **16.1%** | 44.7% | 56.7% |
+
+CER is the character error rate and WER is the word error rate; lower is better. FUNSD was used **only for evaluation** and never for training. Its scans are noisy 1980s–90s faxes and photocopies, so it is a hard test for a 2M-parameter model trained only on synthetic text. The most common FUNSD errors are confusable glyph pairs (`T`→`I`, `O`→`Q`, `e`→`c`, `1`→`l`) and punctuation.
+
+### Speed (CPU, single process)
+
+Intel Core i9-14900HX, PyTorch 2.14.1, FP32. Times are medians after warmup.
+
+| Path | Batch | Median latency | Throughput |
+| --- | ---: | ---: | ---: |
+| Model only, 256 px wide line | 1 | 26.0 ms | 38 lines/s |
+| Model only, 256 px wide line | 8 | 51.0 ms | 157 lines/s |
+| Preprocess + model + decode | 1 | 14.4 ms | 69 lines/s |
+| Preprocess + model + decode | 8 | 42.2 ms | 189 lines/s |
+
+The end-to-end rows use generated lines, which are often narrower than 256 px, so they can be faster than the model-only rows. Loading the checkpoint takes about 60 ms.
+
+### Training cost
+
+| Phase | Hardware | Steps | Batch size | Wall time |
+| --- | --- | ---: | ---: | ---: |
+| Baseline | Intel i9-14900HX (CPU) | 0 → 4,000 | 32 | about 66 min |
+| Resume | NVIDIA RTX 5060 Laptop GPU, mixed precision | 4,000 → 40,000 | 64 | about 65 min |
+
+## Installation
+
+Requires Python 3.10 or newer.
 
 ```bash
-python -m wormocr predict --image document.png --model tiny
-python -m wormocr predict --image document.png --checkpoint artifacts/checkpoints/tiny/best.pt --json
+git clone https://github.com/arjun988/wormOCR.git
+cd wormOCR
+python -m venv .venv
+.venv\Scripts\activate            # Windows
+# source .venv/bin/activate       # macOS / Linux
+pip install -e ".[dev,export,pdf]"
 ```
 
-## Train
+The extras are optional:
 
-Configs live in `configs/`. `tiny` is the main recognizer. `micro` is the smaller one. `small` is the wider fallback. `debug` is a tiny network for a short experiment.
+| Extra | Installs | Needed for |
+| --- | --- | --- |
+| `dev` | `pytest` | Running the test suite |
+| `export` | `onnx`, `onnxruntime` | ONNX and INT8 export |
+| `pdf` | `pypdfium2` | Reading PDF files |
+
+The core dependencies are `torch`, `numpy`, `pillow`, and `pyyaml`. A CPU build of PyTorch is enough for inference. For GPU training, install a CUDA build of PyTorch from [pytorch.org](https://pytorch.org/get-started/locally/).
+
+Check your setup:
 
 ```bash
-python -m wormocr train --config configs/tiny.yaml --mode smoke
-python -m wormocr train --config configs/tiny.yaml --mode debug
-python -m wormocr train --config configs/tiny.yaml --mode baseline
-python -m wormocr train --config configs/tiny.yaml --mode resume --checkpoint artifacts/checkpoints/tiny/last.pt
+wormocr info
 ```
 
-`smoke` checks that data, loss, validation, and checkpointing run. It does not produce a useful model. `debug` is a short experiment. `baseline` uses the config as written. Add `--set train.max_steps=100` or `--set train.batch_size=8` to override any dotted field. Overrides win over the mode preset.
+This prints the Python and PyTorch versions, whether CUDA is available, and how many usable fonts were found.
 
-The loop uses AdamW, a warmup followed by cosine decay, gradient clipping, CTC loss, and early stopping on validation CER. Checkpoints store the weights, optimizer, charset, config, and maturity. `best.pt` is the lowest validation CER. `last.pt` is the newest step. Load only checkpoints you trust: they are PyTorch pickle files.
+### Weights
 
-A decreasing loss only means the optimizer is moving. Check CER on held-out lines before trusting a checkpoint.
+Model weights are **not stored in git**; `*.pt` and `artifacts/` are ignored. wormOCR looks for a checkpoint at `artifacts/checkpoints/tiny/best.pt`. To create one, train it with the commands in [Training](#training). If you already have a weights file, pass its path explicitly:
 
-## Evaluate, export, benchmark
+```python
+OCR(checkpoint="path/to/best_weights.pt")
+```
+
+Checkpoints are PyTorch pickle files. Load only files you trust (see [SECURITY.md](SECURITY.md)).
+
+## Usage
+
+### Python
+
+```python
+from wormocr import OCR
+
+ocr = OCR(model="tiny")                       # or OCR(checkpoint="path/to/best.pt")
+
+line = ocr.predict("line.png", mode="line")   # one text line
+print(line.text)
+
+page = ocr.predict("page.png")                # mode="auto": line or page, chosen by aspect ratio
+for item in page.lines:
+    print(item.order, item.text, item.confidence, item.bbox)
+```
+
+`predict` accepts a file path, a PIL image, or a PDF (with the `pdf` extra). `predict_batch` takes a list of these. Each entry in `result.lines` has `text`, `confidence`, `bbox` (an axis-aligned `(x, y, width, height)` in original image coordinates), and `order` (its reading-order position). Pass `device="cuda"` or `beam_width=8` to `OCR(...)` if you need them.
+
+| Mode | Behavior |
+| --- | --- |
+| `line` | Treats the whole image as one text line |
+| `page` | Runs line detection, deskew, and reading order first |
+| `auto` | Uses `line` for short, wide images and `page` otherwise |
+
+### Command line
 
 ```bash
-python -m wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --synthetic-samples 100
-python -m wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --labels data/val.tsv --image-root data/images --errors artifacts/errors.md
-python -m wormocr export --model artifacts/checkpoints/tiny/best.pt --format onnx --output artifacts/export/tiny.onnx
-python -m wormocr export --model artifacts/checkpoints/tiny/best.pt --format onnx-int8 --output artifacts/export/tiny.int8.onnx
-python -m wormocr benchmark --model artifacts/checkpoints/tiny/best.pt --output artifacts/benchmarks/report.md
+wormocr predict --image line.png --model tiny
+wormocr predict --image page.png --model tiny --json
+wormocr predict --image document.pdf --checkpoint artifacts/checkpoints/tiny/best.pt
 ```
 
-A label file is `relative-image-path<TAB>text`, one pair per line. The evaluator does not lowercase or strip text. CER counts every character, including spaces. WER splits on single spaces, so a doubled space counts.
+Run `wormocr <command> --help` for every option. The available commands are `info`, `train`, `predict`, `evaluate`, `analyze`, `export`, `benchmark`, and `generate`.
 
-`--synthetic-samples` builds a seeded held-out set from the same renderer used for training, with augmentation off. That number is not a real-document score. Pass `--labels` for a real set. Dataset notes are in [docs/DATASETS.md](docs/DATASETS.md).
+## Training
 
-ONNX export checks that FP32 outputs stay within `1e-3` of PyTorch. INT8 is dynamic quantization. The benchmark records its actual max absolute difference instead of assuming it is accurate or faster.
+wormOCR tiny is trained on synthetic lines rendered from fonts installed on your system. On Windows these come from `C:\Windows\Fonts`. You can point `data.font_dir` at any folder of `.ttf` files. No images are stored: each sample is generated from its index and the seed, so a run can be reproduced exactly.
 
-## Model size
+The released checkpoint was produced in two phases.
 
-Measured with `count_parameters` on the configs in this repository, vocabulary of 95 printable ASCII characters plus the CTC blank (96 classes):
+1. CPU baseline, using `configs/tiny.yaml` as written. This run was stopped after its step-4,000 checkpoint.
 
-| Variant | Parameters | FP32 weight storage | Role |
-| --- | ---: | ---: | --- |
-| micro | 1,217,744 | 4.65 MB | Tight CPU and memory budget |
-| tiny | 3,319,264 | 12.66 MB | Default recognizer |
-| small | 11,292,832 | 43.08 MB | Wider fallback |
+   ```bash
+   wormocr train --config configs/tiny.yaml --mode baseline
+   ```
 
-Weight storage is `parameter_count * 4` bytes. A checkpoint file is larger because it also stores the optimizer. The benchmark writes the checkpoint size, ONNX size, and INT8 size when export succeeds. Architecture notes are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+2. GPU resume to step 40,000:
 
-## Fonts and synthetic data
+   ```bash
+   wormocr train --config configs/tiny.yaml --mode resume \
+     --checkpoint artifacts/checkpoints/tiny/last.pt --device cuda \
+     --set train.amp=true --set train.batch_size=64 --set train.num_workers=14 \
+     --set train.max_steps=40000 --set train.max_minutes=240 \
+     --set train.warmup_steps=300 --set data.train_samples=3000000 --set train.log_every=100
+   ```
 
-Training images are rendered from fonts already installed on the machine. wormOCR does not ship font files. On Windows it looks in `C:\Windows\Fonts` and prefers common Latin families such as Arial, Calibri, and Georgia. If none of those can draw Latin letters, set `data.font_dir` to a directory of `.ttf` files.
+Any config field can be overridden with `--set section.key=value`. Training writes `best.pt` (lowest validation CER), `last.pt` (newest step, used for resuming), `best_weights.pt` (weights only, for distribution), and `train_log.jsonl`.
+
+| Mode | Purpose |
+| --- | --- |
+| `smoke` | A few steps to check that data, loss, validation, and checkpointing all run |
+| `debug` | A short experiment on a tiny network |
+| `baseline` | A full run with the config as written |
+| `resume` | Continue from `last.pt` with the weights, optimizer, EMA, and step counter |
+
+To train on your own labelled images, use a tab-separated file containing `relative/path.png<TAB>exact text`. See [docs/DATASETS.md](docs/DATASETS.md).
 
 ```bash
-python -m wormocr generate --config configs/tiny.yaml --samples 32 --out artifacts/data/sample --seed 0
+wormocr train --config configs/tiny.yaml --mode baseline \
+  --set data.labels=data/train.tsv --set data.image_root=data/images \
+  --set data.val_labels=data/val.tsv --set data.val_image_root=data/images
 ```
 
-That writes PNGs and `manifest.jsonl`. Online training does not need those files; the dataset is seeded from the sample index.
+## Evaluation, export, and benchmarks
 
-## Page images and PDFs
+```bash
+# Accuracy on held-out synthetic lines, or on your own label file
+wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --synthetic-samples 800
+wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --labels data/val.tsv --image-root data/images --errors errors.md
 
-Page mode deskews slightly, finds text lines with a horizontal projection, splits wide gutters into columns, and reads each column from top to bottom. Full-width lines, such as a title, stay in vertical order. Boxes are mapped back to the original image.
+# Reproduce the FUNSD number (download FUNSD yourself; it is licensed for non-commercial research)
+python scripts/prepare_funsd.py artifacts/datasets/funsd/dataset/testing_data artifacts/datasets/funsd_test
+wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --labels artifacts/datasets/funsd_test/labels.tsv
 
-This is a simple layout pass. It is not a table parser, and it will merge or drop lines on cluttered pages. The line recognizer can be used without it.
+# ONNX export (checked against PyTorch; max abs difference 5e-5 on the released model)
+wormocr export --model artifacts/checkpoints/tiny/best.pt --format onnx --output artifacts/export/tiny.onnx
 
-PDF input needs `pip install pypdfium2`. Without that package, predicting a PDF raises an error that names the missing dependency.
+# Size, accuracy, latency, and memory report
+wormocr benchmark --model artifacts/checkpoints/tiny/best.pt --output artifacts/benchmarks/report.md
+```
 
-## Development
+The evaluator does not lowercase or strip text. CER counts every character, including spaces.
+
+An INT8 export is available (`--format onnx-int8`), but it is **not recommended** for this model. Dynamic quantization only shrinks the file from 8.7 MB to 8.1 MB, and its outputs drift noticeably from FP32. Use the FP32 ONNX graph.
+
+## How it works
+
+1. **Preprocessing.** The image is converted to grayscale and resized to 32 px tall, keeping its aspect ratio, then normalized to `[-1, 1]`. Batches are padded on the right with the line's own background value.
+2. **Encoder.** A four-stage convolutional network with depthwise-separable convolutions. It pools height from 32 to 2 and width by 4.
+3. **Sequence model.** A linear projection feeds a 2-layer bidirectional GRU. That reads the line left to right and right to left.
+4. **Decoder.** A CTC head over 96 classes, decoded greedily by default. Beam search is optional.
+5. **Page layout** (page mode only). Optional deskew within ±5°, Otsu binarization, horizontal projection profiles to find lines, gutter detection for columns, and top-to-bottom reading order within each column. Boxes are mapped back to the original image.
+
+Training details:
+
+- **Loss and optimizer.** CTC loss with AdamW, linear warmup, then cosine decay.
+- **Weight averaging.** An exponential moving average of the weights with decay 0.999. The averaged weights are the ones evaluated and shipped.
+- **Mixed precision.** Used on CUDA.
+- **Augmentation.** Blur, noise, JPEG artifacts, lighting gradients, rotation, shear, stroke thickening and thinning, binarization, and a low-resolution "scan" pass.
+- **Form-style text.** Amounts, phone numbers, IDs, and `Field:` labels.
+
+More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DATASETS.md](docs/DATASETS.md).
+
+## Project layout
+
+```text
+wormOCR/
+├── configs/            Model and training configs (tiny.yaml is the released model)
+├── docs/               Architecture, datasets, benchmarks, roadmap
+├── scripts/            Dataset preparation and benchmark helpers
+├── src/wormocr/
+│   ├── api.py          OCR class (public Python API)
+│   ├── cli.py          `wormocr` command
+│   ├── checkpoints.py  Checkpoint loading and lookup
+│   ├── preprocessing.py
+│   ├── vocabulary.py   Character set and CTC helpers
+│   ├── data/           Synthetic renderer, label-file datasets, fonts
+│   ├── detection/      Line finding, deskew, reading order
+│   ├── inference/      Line engine and CTC decoding
+│   ├── models/         CRNN definition
+│   ├── training/       Training loop and EMA
+│   ├── evaluation/     CER/WER, error reports, robustness slices
+│   ├── export/         ONNX and INT8 export
+│   └── benchmark/      Benchmark report
+└── tests/              pytest suite
+```
+
+## Limitations
+
+- **English printable ASCII only.** Accented letters, symbols such as `€` or `°`, and other scripts are rejected with an error rather than silently dropped.
+- **Printed text only.** Handwriting is not supported.
+- **Real scans are much harder than clean text.** Expect a CER of about 16% on noisy forms like FUNSD, versus under 1% on clean lines. Very small crops of one or two characters are a known weak spot.
+- **Simple page layout.** Page layout uses projection profiles, not a learned text detector. Tables, rotated text, and cluttered layouts can merge or drop lines.
+- **No language-model correction.** The output is exactly what the decoder emits.
+- **No external comparison yet.** Tesseract and PaddleOCR were not installed on the benchmark machine, so no accuracy comparison against them has been run.
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for planned work.
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). Before opening a pull request:
 
 ```bash
 python -m pytest
 ```
 
-The suite covers the vocabulary, variable-width preprocessing, the width formula, CTC collapse of repeated characters, CER/WER, synthetic reproducibility, line detection and reading order, checkpoint resume, a four-line memorization run, the CLI, and ONNX parity when the export packages are installed.
+When you report accuracy, include the dataset, the number of lines, and the exact command, and run it on a set the model was not trained on.
 
-## Limitations
+## Citation
 
-- English printable ASCII only. A character outside that set is rejected rather than silently dropped.
-- No language-model correction. The text you get is the decoder output.
-- Quantization and a larger model are not automatically better. Use the benchmark.
-- External baselines are reported only when the tool is installed. This environment's comparison is written up in [docs/BASELINE_COMPARISON.md](docs/BASELINE_COMPARISON.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+If you use wormOCR in your work, please cite it (see [CITATION.cff](CITATION.cff)):
+
+```bibtex
+@software{shukla2026wormocr,
+  author  = {Shukla, Arjun},
+  title   = {wormOCR: a small local OCR engine for printed English text},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/arjun988/wormOCR}
+}
+```
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Copyright (c) 2026 arjun shukla.
+Released under the [MIT License](LICENSE). Copyright (c) 2026 arjun shukla.
 
-No third-party recognition weights are included. Fonts used to render training images stay on your machine and are not redistributed.
+wormOCR ships no third-party OCR weights and redistributes no fonts. The training images are rendered from fonts on your own machine. FUNSD is used only for evaluation and is not included in this repository.

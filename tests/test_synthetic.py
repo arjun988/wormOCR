@@ -4,7 +4,7 @@ from wormocr.config import load_config
 from wormocr.data.dataset import OnlineSynthDataset, collate_lines
 from wormocr.data.fonts import discover_fonts
 from wormocr.models.crnn import build_model, build_specs, output_width
-from wormocr.vocabulary import Vocabulary
+from wormocr.vocabulary import Vocabulary, ctc_time_needed
 
 
 def test_synthetic_samples_are_reproducible_and_ctc_safe():
@@ -15,8 +15,8 @@ def test_synthetic_samples_are_reproducible_and_ctc_safe():
     second = dataset[1]
     assert first["text"] == second["text"]
     assert torch.equal(first["image"], second["image"])
-    specs = build_specs(config["model"]["channels"])
-    assert output_width(first["width"], specs) >= len(first["text"])
+    specs = build_specs(config["model"]["channels"], config["model"]["width_stride"])
+    assert output_width(first["width"], specs) >= ctc_time_needed(first["text"])
     Vocabulary().encode(first["text"])
     batch = collate_lines([dataset[0], dataset[1], dataset[2]])
     assert batch["images"].shape[0] == 3

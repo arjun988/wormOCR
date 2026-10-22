@@ -3,30 +3,36 @@ device: cpu
 model:
   name: tiny
   image_height: 32
+  width_stride: 4
   channels: [48, 96, 160, 192]
   separable: true
-  rnn_hidden: 320
+  rnn_hidden: 256
   rnn_layers: 2
-  rnn_dropout: 0.1
-  proj_size: 320
+  rnn_dropout: 0.0
+  proj_size: 256
 data:
-  train_samples: 8000
+  train_samples: 400000
   val_samples: 800
-  font_size_min: 15
-  font_size_max: 34
-  max_chars: 42
+  font_size_min: 14
+  font_size_max: 36
+  max_chars: 24
   augment: true
   max_width: 1280
 train:
-  epochs: 12
+  epochs: 1
+  max_steps: 12000
+  max_minutes: 170
   batch_size: 32
-  lr: 0.001
-  weight_decay: 0.01
+  lr: 0.0012
+  weight_decay: 0.0001
   grad_clip: 5.0
-  warmup_steps: 150
-  early_stopping_patience: 5
+  warmup_steps: 400
+  ema_decay: 0.999
+  eval_every: 1000
+  early_stopping_patience: 0
   checkpoint_dir: artifacts/checkpoints/tiny
-  log_every: 20
-  save_every: 5
+  log_every: 100
+  save_every: 0
   amp: false
-  num_workers: 0
+  num_workers: 6
+  torch_threads: 12

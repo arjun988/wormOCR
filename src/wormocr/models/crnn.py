@@ -1,7 +1,9 @@
-"""Depthwise-separable CNN + BiGRU + CTC log-probabilities.
+"""CNN (optionally depthwise-separable) + BiGRU + CTC log-probabilities.
 
-Width is downsampled only once (stride 2). Height 32 is reduced to a short
-feature column and flattened, so narrow glyphs keep a usable time axis.
+Width is downsampled by `width_stride` (2 or 4). Height 32 is reduced to a
+short feature column and flattened. Stride 4 halves the sequence the GRU must
+read and makes CTC alignment converge much sooner; older checkpoints that do
+not store the field load as stride 2.
 """
 
 from __future__ import annotations
@@ -23,15 +25,18 @@ class Spec:
     padding: tuple[int, int]
 
 
-def build_specs(channels: list[int]) -> list[Spec]:
+def build_specs(channels: list[int], width_stride: int = 2) -> list[Spec]:
     if len(channels) != 4:
         raise ConfigError("the recognizer expects four channel stages")
+    if int(width_stride) not in (2, 4):
+        raise ConfigError("model.width_stride must be 2 or 4")
     first, second, third, fourth = (int(value) for value in channels)
+    second_pool = (2, 2) if int(width_stride) == 4 else (2, 1)
     return [
         Spec("conv", first, (3, 3), (1, 1), (1, 1)),
         Spec("pool", 0, (2, 2), (2, 2), (0, 0)),
         Spec("conv", second, (3, 3), (1, 1), (1, 1)),
-        Spec("pool", 0, (2, 1), (2, 1), (0, 0)),
+        Spec("pool", 0, second_pool, second_pool, (0, 0)),
         Spec("conv", third, (3, 3), (1, 1), (1, 1)),
         Spec("pool", 0, (2, 1), (2, 1), (0, 0)),
         Spec("conv", fourth, (3, 3), (1, 1), (1, 1)),
@@ -147,6 +152,7 @@ class CRNN(nn.Module):
         rnn_layers: int = 2,
         rnn_dropout: float = 0.1,
         proj_size: int = 256,
+        width_stride: int = 2,
     ) -> None:
         super().__init__()
         if num_classes < 2:
@@ -154,7 +160,8 @@ class CRNN(nn.Module):
         stage_channels = list(channels or [32, 64, 128, 192])
         self.image_height = int(image_height)
         self.num_classes = int(num_classes)
-        self.encoder = Encoder(in_channels, build_specs(stage_channels), separable)
+        self.width_stride = int(width_stride)
+        self.encoder = Encoder(in_channels, build_specs(stage_channels, self.width_stride), separable)
         with torch.no_grad():
             probe = torch.zeros(1, in_channels, self.image_height, 32)
             encoded = self.encoder(probe)
@@ -172,7 +179,6 @@ class CRNN(nn.Module):
             nn.ReLU(inplace=False),
         )
         dropout = float(rnn_dropout) if rnn_layers > 1 else 0.0
-        self.rnn_dropout = nn.Dropout(dropout if dropout > 0 else 0.0)
         self.rnn = nn.GRU(
             input_size=proj_size,
             hidden_size=int(rnn_hidden),
@@ -182,6 +188,10 @@ class CRNN(nn.Module):
             dropout=dropout if rnn_layers > 1 else 0.0,
         )
         self.classifier = nn.Linear(int(rnn_hidden) * 2, self.num_classes)
+        nn.init.zeros_(self.classifier.bias)
+        # Class 0 is the CTC blank. A negative bias stops a fresh model from
+        # taking the blank at every frame before it has aligned a character.
+        self.classifier.bias.data[0] = -2.0
 
     def output_lengths(self, widths: torch.Tensor) -> torch.Tensor:
         lengths = [self.encoder.output_width(int(width)) for width in widths.detach().cpu().tolist()]
@@ -197,7 +207,7 @@ class CRNN(nn.Module):
         features = self.encoder(images)
         batch, channels, height, time = features.shape
         sequence = features.permute(0, 3, 1, 2).contiguous().view(batch, time, channels * height)
-        sequence = self.rnn_dropout(self.proj(sequence))
+        sequence = self.proj(sequence)
         sequence, _hidden = self.rnn(sequence)
         return self.classifier(sequence).float().log_softmax(dim=-1)
 
@@ -214,6 +224,7 @@ def build_model(config: dict, num_classes: int) -> CRNN:
         rnn_layers=int(model_cfg["rnn_layers"]),
         rnn_dropout=float(model_cfg.get("rnn_dropout", 0.0)),
         proj_size=int(model_cfg.get("proj_size", model_cfg["rnn_hidden"])),
+        width_stride=int(model_cfg.get("width_stride", 2)),
     )
 
 

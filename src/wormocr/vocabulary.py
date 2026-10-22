@@ -13,6 +13,14 @@ def default_charset() -> str:
     return " " + "".join(chr(code) for code in range(33, 127))
 
 
+def ctc_time_needed(text: str) -> int:
+    """Minimum frames so CTC can emit the text, including a blank between repeats."""
+    if not text:
+        return 0
+    gaps = sum(left == right for left, right in zip(text, text[1:]))
+    return len(text) + gaps
+
+
 class Vocabulary:
     def __init__(self, charset: str | None = None) -> None:
         text = default_charset() if charset is None else charset

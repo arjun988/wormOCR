@@ -15,13 +15,15 @@ Status of the first build. "Done" means the code path exists and the test suite 
 - [x] Classical page segmentation, deskew, and reading order. Line recognition still works on its own.
 - [x] Parameter counts measured for micro, tiny, and small.
 - [x] Four clean lines can be memorized by the training loss and greedy decoder.
+- [x] Width stride 4, EMA weights, and scan-style augmentation. These got the tiny model past the CTC blank plateau.
+- [x] wormOCR tiny (2.17M parameters) trained for 40,000 steps: 0.70% CER on synthetic validation, 16.1% CER on FUNSD test word crops. See docs/BENCHMARKS.md.
 
 ## Measured, not finished
 
-- [ ] A multi-epoch tiny checkpoint evaluated on a real held-out line set.
+- [ ] Lower the FUNSD error rate: confusable glyphs (`T`/`I`, `O`/`Q`, `e`/`c`), punctuation, and very short crops.
 - [ ] The same images run through Tesseract or an English PP-OCR mobile model.
-- [ ] A choice between micro and tiny based on that comparison, not on parameter count alone.
-- [ ] INT8 latency and accuracy on the same real set. Keep FP32 if INT8 loses too much.
+- [ ] Publish `best_weights.pt` as a release asset.
+- [ ] INT8 that keeps accuracy. Dynamic INT8 saved 7% of the size and drifted too far, so FP32 ONNX stays the default.
 
 ## Later
 

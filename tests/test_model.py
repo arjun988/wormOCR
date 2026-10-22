@@ -12,7 +12,7 @@ def _model():
 
 def test_forward_matches_width_formula_and_backward():
     model, config = _model()
-    specs = build_specs(config["model"]["channels"])
+    specs = build_specs(config["model"]["channels"], config["model"]["width_stride"])
     for width in (8, 15, 16, 17, 32, 100, 257):
         images = torch.rand(2, 1, 32, width)
         log_probs = model(images)
@@ -24,6 +24,13 @@ def test_forward_matches_width_formula_and_backward():
     loss = log_probs.sum()
     loss.backward()
     assert any(parameter.grad is not None and float(parameter.grad.abs().sum()) > 0 for parameter in model.parameters())
+
+
+def test_blank_bias_is_below_the_characters():
+    model, _config = _model()
+    bias = model.classifier.bias.detach()
+    assert float(bias[0]) < 0
+    assert float(bias[0]) < float(bias[1:].min())
 
 
 def test_output_lengths_follow_unpadded_width():

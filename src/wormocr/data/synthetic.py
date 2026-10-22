@@ -19,7 +19,7 @@ from wormocr.data.lexicon import PANGRAM, REPEAT_WORDS, WORDS
 from wormocr.exceptions import DataError
 from wormocr.models.crnn import build_specs, output_width
 from wormocr.preprocessing import prepare_line, resize_to_height
-from wormocr.vocabulary import Vocabulary, default_charset
+from wormocr.vocabulary import Vocabulary, ctc_time_needed, default_charset
 
 CHARSET = default_charset()
 LETTERS = [char for char in CHARSET if char.isalnum() or char in " .,!?'-:/$%"]
@@ -29,12 +29,12 @@ def sample_text(rng: random.Random, max_chars: int) -> str:
     limit = max(1, int(max_chars))
     kind = rng.choices(
         ["word", "words", "number", "code", "repeat", "random", "punct", "pangram"],
-        weights=[18, 32, 12, 10, 10, 10, 6, 2],
+        weights=[30, 16, 14, 12, 10, 10, 6, 2],
     )[0]
     if kind == "word":
         text = rng.choice(WORDS)
     elif kind == "words":
-        count = rng.randint(2, 6)
+        count = 2 if limit < 16 else rng.randint(2, 3)
         text = " ".join(rng.choice(WORDS) for _ in range(count))
     elif kind == "number":
         text = _number(rng)
@@ -42,7 +42,7 @@ def sample_text(rng: random.Random, max_chars: int) -> str:
         text = _code(rng)
     elif kind == "repeat":
         text = rng.choice(REPEAT_WORDS)
-        if rng.random() < 0.4:
+        if rng.random() < 0.4 and limit >= len(text) + 4:
             text = f"{text} {rng.choice(REPEAT_WORDS)}"
     elif kind == "punct":
         word = rng.choice(WORDS)
@@ -57,6 +57,8 @@ def sample_text(rng: random.Random, max_chars: int) -> str:
         )
     elif kind == "pangram":
         text = PANGRAM if rng.random() < 0.5 else PANGRAM.lower()
+        if len(text) > limit:
+            text = rng.choice(WORDS)
     else:
         length = rng.randint(1, min(12, limit))
         pool = [char for char in CHARSET if char != " "]
@@ -96,13 +98,23 @@ def _number(rng: random.Random) -> str:
 
 
 def _code(rng: random.Random) -> str:
-    choice = rng.randrange(4)
+    choice = rng.randrange(9)
     if choice == 0:
         return f"INV-{rng.randint(1000, 9999)}"
     if choice == 1:
         return f"${rng.randint(1, 999)}.{rng.randint(0, 99):02d}"
     if choice == 2:
         return f"ID {rng.choice('ABCDEFGHJKLMNPQRSTUVWXYZ')}{rng.randint(100, 999)}"
+    if choice == 3:
+        return f"${rng.randint(1, 99)},{rng.randint(0, 999):03d}.{rng.randint(0, 99):02d}"
+    if choice == 4:
+        return f"({rng.randint(200, 999)}) {rng.randint(200, 999)}-{rng.randint(0, 9999):04d}"
+    if choice == 5:
+        return f"#{rng.randint(1, 99999)}"
+    if choice == 6:
+        return f"{rng.choice(WORDS).capitalize()}:"
+    if choice == 7:
+        return f"{rng.randint(1, 999):,}".replace(",", rng.choice([",", ""])) + rng.choice(["", "%", ".00"])
     return f"555-01{rng.randint(0, 99):02d}"
 
 
@@ -157,9 +169,14 @@ def _draw(
     box = probe.textbbox((0, 0), text, font=font)
     text_width = max(1, box[2] - box[0])
     text_height = max(1, box[3] - box[1])
-    pad_x = rng.randint(4, 18)
-    pad_y = rng.randint(3, 12)
-    slack = rng.randint(0, 8)
+    if rng.random() < 0.4:
+        pad_x = rng.randint(1, 4)
+        pad_y = rng.randint(1, 3)
+        slack = rng.randint(0, 2)
+    else:
+        pad_x = rng.randint(4, 18)
+        pad_y = rng.randint(3, 12)
+        slack = rng.randint(0, 8)
     width = text_width + pad_x * 2 + slack
     height = text_height + pad_y * 2 + slack
     image = Image.new("L", (width, height), color=background)
@@ -184,24 +201,58 @@ def apply_augmentations(
     np_rng: np.random.Generator,
     background: int,
 ) -> Image.Image:
-    if rng.random() < 0.35:
-        image = image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.3, 1.15)))
+    """Apply up to two mild corruptions, including scan-like degradations."""
     if rng.random() < 0.3:
-        image = _noise(image, np_rng, rng.uniform(4, 14))
-    if rng.random() < 0.3:
-        image = _jpeg(image, rng.randint(38, 85))
-    if rng.random() < 0.35:
-        image = ImageEnhance.Brightness(image).enhance(rng.uniform(0.75, 1.25))
-        image = ImageEnhance.Contrast(image).enhance(rng.uniform(0.75, 1.3))
-    if rng.random() < 0.3:
-        image = _lighting(image, np_rng)
-    if rng.random() < 0.25:
-        image = _down_up(image, rng)
-    if rng.random() < 0.28:
-        image = image.rotate(rng.uniform(-3.0, 3.0), resample=Image.Resampling.BILINEAR, expand=True, fillcolor=background)
-    elif rng.random() < 0.25:
-        image = _shear(image, rng.uniform(-0.12, 0.12), background)
+        return image
+    count = 1 if rng.random() < 0.6 else 2
+    for _ in range(count):
+        image = _one_augmentation(image, rng, np_rng, background)
     return image
+
+
+def _one_augmentation(
+    image: Image.Image,
+    rng: random.Random,
+    np_rng: np.random.Generator,
+    background: int,
+) -> Image.Image:
+    kind = rng.choices(
+        ["blur", "noise", "jpeg", "tone", "light", "lowres", "rotate", "shear", "scan", "bold", "thin", "binary"],
+        weights=[8, 8, 8, 8, 5, 9, 5, 5, 12, 5, 4, 5],
+    )[0]
+    if kind == "scan":
+        return _scan(image, rng, np_rng)
+    if kind == "bold":
+        return image.filter(ImageFilter.MinFilter(3) if background > 128 else ImageFilter.MaxFilter(3))
+    if kind == "thin":
+        if image.height < 24:
+            return image
+        return image.filter(ImageFilter.MaxFilter(3) if background > 128 else ImageFilter.MinFilter(3))
+    if kind == "binary":
+        array = np.asarray(image).astype(np.int16)
+        threshold = int((array.min() + array.max()) / 2) + rng.randint(-20, 20)
+        return Image.fromarray(np.where(array > threshold, 255, 0).astype(np.uint8), mode="L")
+    if kind == "blur":
+        return image.filter(ImageFilter.GaussianBlur(radius=rng.uniform(0.3, 0.9)))
+    if kind == "noise":
+        return _noise(image, np_rng, rng.uniform(3, 10))
+    if kind == "jpeg":
+        return _jpeg(image, rng.randint(45, 85))
+    if kind == "tone":
+        image = ImageEnhance.Brightness(image).enhance(rng.uniform(0.8, 1.2))
+        return ImageEnhance.Contrast(image).enhance(rng.uniform(0.8, 1.25))
+    if kind == "light":
+        return _lighting(image, np_rng, strength=0.25)
+    if kind == "lowres":
+        return _down_up(image, rng)
+    if kind == "rotate":
+        return image.rotate(
+            rng.uniform(-2.5, 2.5),
+            resample=Image.Resampling.BILINEAR,
+            expand=True,
+            fillcolor=background,
+        )
+    return _shear(image, rng.uniform(-0.08, 0.08), background)
 
 
 def apply_corruption(
@@ -228,6 +279,20 @@ def apply_corruption(
     if kind == "small":
         return image
     raise DataError(f"unknown corruption {kind!r}")
+
+
+def _scan(image: Image.Image, rng: random.Random, np_rng: np.random.Generator) -> Image.Image:
+    """Approximate a low-resolution office scan: shrink, add sensor noise, re-enlarge."""
+    width, height = image.size
+    target = rng.randint(10, 18)
+    if height <= target:
+        return _noise(image, np_rng, rng.uniform(4, 12))
+    scale = target / float(height)
+    small = image.resize((max(1, int(width * scale)), target), Image.Resampling.BOX)
+    small = _noise(small, np_rng, rng.uniform(4, 16))
+    if rng.random() < 0.5:
+        small = _jpeg(small, rng.randint(35, 75))
+    return small.resize((width, height), Image.Resampling.BILINEAR)
 
 
 def _noise(image: Image.Image, np_rng: np.random.Generator, sigma: float) -> Image.Image:
@@ -273,13 +338,21 @@ def _shear(image: Image.Image, amount: float, background: int) -> Image.Image:
     )
 
 
-def fit_label_width(image: Image.Image, text: str, height: int, channels: list[int], max_width: int) -> Image.Image:
-    """Resize to the model height and widen until CTC has a timestep per character."""
+def fit_label_width(
+    image: Image.Image,
+    text: str,
+    height: int,
+    channels: list[int],
+    max_width: int,
+    width_stride: int = 2,
+) -> Image.Image:
+    """Resize to the model height and widen until CTC can align the label, including repeats."""
     image = resize_to_height(image.convert("L"), height)
-    specs = build_specs([int(value) for value in channels])
+    specs = build_specs([int(value) for value in channels], int(width_stride))
+    needed = max(len(text), ctc_time_needed(text))
     width = image.width
     guard = 0
-    while output_width(max(width, 8), specs) < len(text) and guard < 8:
+    while output_width(max(width, 8), specs) < needed and guard < 8:
         width = max(width + 2, int(width * 1.25) + len(text))
         guard += 1
         if width > max(max_width * 2, 4096):
@@ -288,7 +361,7 @@ def fit_label_width(image: Image.Image, text: str, height: int, channels: list[i
             )
     if width != image.width:
         image = image.resize((width, height), Image.Resampling.BILINEAR)
-    if output_width(image.width, specs) < len(text):
+    if output_width(image.width, specs) < needed:
         raise DataError(f"label {text!r} does not fit in the image width")
     return image
 
@@ -330,6 +403,7 @@ def make_sample(
         int(model_cfg["image_height"]),
         list(model_cfg["channels"]),
         int(data_cfg["max_width"]),
+        int(model_cfg.get("width_stride", 2)),
     )
     tensor, pad_value = prepare_line(
         image,

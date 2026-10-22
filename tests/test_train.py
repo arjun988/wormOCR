@@ -1,3 +1,4 @@
+import pytest
 import torch
 from PIL import Image, ImageDraw, ImageFont
 
@@ -7,8 +8,64 @@ from wormocr.data.fonts import discover_fonts
 from wormocr.inference.decode import greedy_decode
 from wormocr.models.crnn import CRNN, build_model
 from wormocr.preprocessing import prepare_line
-from wormocr.training.loop import compute_loss, train
+from wormocr.training.loop import compute_loss, maturity_for, schedule_span, train
 from wormocr.vocabulary import Vocabulary
+
+
+def test_resume_schedule_is_counted_from_zero():
+    local = schedule_span(128, epochs=6, batches_per_epoch=64, max_steps=None)
+    assert local == 384
+    from wormocr.training.loop import learning_rate
+
+    assert learning_rate(0, local, warmup=20, base_lr=0.001, min_ratio=0.1) == pytest.approx(0.00005)
+
+
+def test_maturity_stays_debug_until_five_hundred_steps():
+    assert maturity_for("smoke", 2) == "smoke-tested"
+    assert maturity_for("debug", 40) == "debug-trained"
+    assert maturity_for("baseline", 64) == "debug-trained"
+    assert maturity_for("resume", 256) == "debug-trained"
+    assert maturity_for("baseline", 500) == "trained"
+    assert maturity_for("resume", 500) == "trained"
+
+
+def test_ema_checkpoint_keeps_raw_weights_for_resume(tmp_path):
+    config = load_config(
+        "configs/debug.yaml",
+        [
+            f"train.checkpoint_dir={tmp_path.as_posix()}",
+            "train.max_steps=4",
+            "train.ema_decay=0.9",
+            "train.eval_every=2",
+            "data.train_samples=16",
+            "data.val_samples=4",
+            "data.augment=false",
+            "train.epochs=2",
+        ],
+        mode="baseline",
+    )
+    result = train(config, mode="baseline")
+    assert result.steps == 4
+    payload = load_checkpoint(result.last_checkpoint)
+    assert "train_state" in payload
+    assert len(payload["history"]) == 2
+    weights = load_checkpoint(tmp_path / "best_weights.pt")
+    assert "train_state" not in weights and "optimizer_state" not in weights
+
+
+def test_evaluation_scores_a_crop_too_narrow_for_its_label():
+    from wormocr.data.dataset import collate_lines
+    from wormocr.training.loop import evaluate_model
+
+    vocabulary = Vocabulary()
+    model = CRNN(num_classes=vocabulary.size, channels=(8, 16, 16, 16), rnn_hidden=16, width_stride=4)
+    samples = [
+        {"image": torch.zeros(1, 32, 8), "text": "82092117", "pad_value": 0.0},
+        {"image": torch.zeros(1, 32, 64), "text": "ok", "pad_value": 0.0},
+    ]
+    totals, _ = evaluate_model(model, [collate_lines(samples)], vocabulary, torch.device("cpu"))
+    assert totals.samples == 2
+    assert totals.character_edits >= 1
 
 
 def test_smoke_saves_and_resumes(tmp_path):

@@ -32,7 +32,7 @@ def _write_checkpoint(directory: Path) -> Path:
 def test_missing_checkpoint_explains_that_nothing_is_downloaded(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(CheckpointError) as exc:
-        resolve_checkpoint("tiny", None)
+        resolve_checkpoint("not-a-trained-variant", None)
     assert "does not download" in str(exc.value)
 
 
@@ -61,12 +61,21 @@ def test_api_predicts_a_line_and_a_page(tmp_path):
 
 def test_pdf_dependency_is_explicit(tmp_path):
     checkpoint = _write_checkpoint(tmp_path)
-    pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(b"%PDF-1.4\n")
     ocr = OCR(checkpoint=checkpoint, device="cpu")
     try:
-        import pypdfium2  # noqa: F401
+        import pypdfium2 as pdfium
     except ImportError:
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
         with pytest.raises(RecognitionError) as exc:
             ocr.predict(pdf)
         assert "pypdfium2" in str(exc.value)
+        return
+    pdf = tmp_path / "doc.pdf"
+    document = pdfium.PdfDocument.new()
+    document.new_page(200, 80)
+    document.save(pdf)
+    document.close()
+    result = ocr.predict(pdf)
+    assert result.layout == "pdf"
+    assert result.pages is not None and len(result.pages) == 1
