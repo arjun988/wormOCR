@@ -479,7 +479,7 @@ def disable_power_throttling() -> bool:
 
 
 def serve(
-    model: str = "tiny",
+    model: str = "wormocr-2M",
     checkpoint: str | None = None,
     device: str | None = "cpu",
     host: str = "127.0.0.1",
@@ -492,7 +492,7 @@ def serve(
     torch.set_num_threads(int(threads) if threads else default_threads())
     engine = OCR(model=model, checkpoint=checkpoint, device=device).engine
     engine.batch_size = 16
-    info = describe_engine(engine, f"wormOCR {model}", str(engine.device))
+    info = describe_engine(engine, model if model.lower().startswith("wormocr") else f"wormOCR {model}", str(engine.device))
     info["threads"] = torch.get_num_threads()
     server = make_server(engine, info, host, port)
     print(f"{info['name']} ({info['parameters'] / 1e6:.2f}M parameters) ready at http://{host}:{port}", flush=True)

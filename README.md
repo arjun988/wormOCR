@@ -7,12 +7,12 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c.svg)](https://pytorch.org)
 [![ONNX](https://img.shields.io/badge/export-ONNX-005ced.svg)](https://onnx.ai)
 
-wormOCR reads printed text from images, scans, and PDFs on an ordinary CPU. The recognizer, **wormOCR tiny**, has **2.17 million parameters** (8.7 MB of weights). It runs entirely on your machine: there is no cloud API, and importing the package never downloads anything.
+wormOCR reads printed text from images, scans, and PDFs on an ordinary CPU. The first released model, **wormocr-2M**, has **2.17 million parameters** (8.7 MB of weights). It runs entirely on your machine: there is no cloud API, and importing the package never downloads anything. You fetch the weights once, explicitly, with `wormocr download`.
 
 ```python
 from wormocr import OCR
 
-ocr = OCR(model="tiny")
+ocr = OCR()                                   # wormocr-2M, after `wormocr download`
 print(ocr.predict("invoice_line.png").text)
 # Invoice #1042 Total: $18.50
 ```
@@ -41,7 +41,7 @@ print(ocr.predict("invoice_line.png").text)
 
 - **Small.** 2,174,880 parameters, an 8.7 MB weights file, and an 8.7 MB ONNX graph.
 - **Fast on CPU.** About 14 ms per text line end to end (preprocessing, model, and decoding) on a laptop CPU, with no GPU needed for inference.
-- **Fully local.** No network calls, no telemetry, and no hidden weight downloads.
+- **Fully local.** No network calls, no telemetry, and no hidden weight downloads. Weights come from a pinned GitHub release only when you run `wormocr download`, and every file is checked against a SHA-256 hash.
 - **Trained from scratch.** Every training image is rendered on the fly from fonts already on your machine. No third-party OCR weights or proprietary datasets are used.
 - **Complete toolkit.** One package handles training, resuming, evaluation (CER, WER, exact match), error analysis, ONNX export, benchmarking, page layout, and PDF input.
 - **Browser demo.** `wormocr serve` opens a local page where you can drop in an image or PDF and see the extracted text with line boxes.
@@ -49,10 +49,10 @@ print(ocr.predict("invoice_line.png").text)
 
 ## Model
 
-| | wormOCR tiny |
+| | wormocr-2M |
 | --- | --- |
 | Parameters | 2,174,880 (2.17M) |
-| Weights file (`best_weights.pt`, FP32) | 8.7 MB |
+| Weights file (`wormocr-2M.safetensors`, FP32) | 8.7 MB |
 | ONNX (FP32) | 8.7 MB |
 | Architecture | CRNN: depthwise-separable CNN, then a 2-layer BiGRU (256 hidden units), then a CTC head |
 | Input | Grayscale line, height 32 px, variable width |
@@ -115,7 +115,7 @@ The extras are optional:
 | `export` | `onnx`, `onnxruntime` | ONNX and INT8 export |
 | `pdf` | `pypdfium2` | Reading PDF files |
 
-The core dependencies are `torch`, `numpy`, `pillow`, and `pyyaml`. A CPU build of PyTorch is enough for inference. For GPU training, install a CUDA build of PyTorch from [pytorch.org](https://pytorch.org/get-started/locally/).
+The core dependencies are `torch`, `numpy`, `pillow`, `pyyaml`, and `safetensors`. A CPU build of PyTorch is enough for inference. For GPU training, install a CUDA build of PyTorch from [pytorch.org](https://pytorch.org/get-started/locally/).
 
 Check your setup:
 
@@ -127,13 +127,31 @@ This prints the Python and PyTorch versions, whether CUDA is available, and how 
 
 ### Weights
 
-Model weights are **not stored in git**; `*.pt` and `artifacts/` are ignored. wormOCR looks for a checkpoint at `artifacts/checkpoints/tiny/best.pt`. To create one, train it with the commands in [Training](#training). If you already have a weights file, pass its path explicitly:
+Model weights are **not stored in git**. They are published as assets of the [`wormocr-2M` GitHub release](https://github.com/arjun988/wormOCR/releases/tag/wormocr-2M):
 
-```python
-OCR(checkpoint="path/to/best_weights.pt")
+| File | Contents | Size |
+| --- | --- | ---: |
+| `wormocr-2M.safetensors` | Weights (tensors only, no pickled code) | 8.7 MB |
+| `wormocr-2M.json` | Architecture config, charset, maturity label, training step | 2 KB |
+| `wormocr-2M.onnx` | FP32 ONNX graph for ONNX Runtime | 8.7 MB |
+| `SHA256SUMS.txt` | SHA-256 of each file | |
+
+Download and verify them once:
+
+```bash
+wormocr download              # same as: wormocr download wormocr-2M
 ```
 
-Checkpoints are PyTorch pickle files. Load only files you trust (see [SECURITY.md](SECURITY.md)).
+Files go to `~/.cache/wormocr/wormocr-2M/` (set `WORMOCR_HOME` to change this, or pass `--dir`). The expected SHA-256 hashes are built into the package, so a corrupted or altered file is rejected. Nothing else in wormOCR uses the network. If the weights are missing, `OCR()` raises an error that tells you to run the download command.
+
+You can also load any local weights file directly. This works for released `.safetensors` files (with the `.json` file next to them) and for `.pt` checkpoints from your own training:
+
+```python
+OCR(checkpoint="path/to/wormocr-2M.safetensors")
+OCR(checkpoint="artifacts/checkpoints/tiny/best.pt")
+```
+
+Training checkpoints (`.pt`) are PyTorch pickle files. Load only files you trust (see [SECURITY.md](SECURITY.md)).
 
 ## Usage
 
@@ -142,7 +160,7 @@ Checkpoints are PyTorch pickle files. Load only files you trust (see [SECURITY.m
 ```python
 from wormocr import OCR
 
-ocr = OCR(model="tiny")                       # or OCR(checkpoint="path/to/best.pt")
+ocr = OCR()                                   # wormocr-2M; or OCR(checkpoint="path/to/weights")
 
 line = ocr.predict("line.png", mode="line")   # one text line
 print(line.text)
@@ -163,8 +181,9 @@ for item in page.lines:
 ### Command line
 
 ```bash
-wormocr predict --image line.png --model tiny
-wormocr predict --image page.png --model tiny --json
+wormocr download                                  # once
+wormocr predict --image line.png
+wormocr predict --image page.png --json
 wormocr predict --image document.pdf --checkpoint artifacts/checkpoints/tiny/best.pt
 ```
 
@@ -201,9 +220,9 @@ Send the raw file bytes as the request body.
 
 ## Training
 
-wormOCR tiny is trained on synthetic lines rendered from fonts installed on your system. On Windows these come from `C:\Windows\Fonts`. You can point `data.font_dir` at any folder of `.ttf` files. No images are stored: each sample is generated from its index and the seed, so a run can be reproduced exactly.
+wormocr-2M was trained on synthetic lines rendered from fonts installed on your system. On Windows these come from `C:\Windows\Fonts`. You can point `data.font_dir` at any folder of `.ttf` files. No images are stored: each sample is generated from its index and the seed, so a run can be reproduced exactly.
 
-The released checkpoint was produced in two phases.
+wormocr-2M was produced in two phases with `configs/tiny.yaml`. The released weights are the best validation checkpoint, from step 38,000 of 40,000.
 
 1. CPU baseline, using `configs/tiny.yaml` as written. This run was stopped after its step-4,000 checkpoint.
 
@@ -282,13 +301,14 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DATASET
 
 ```text
 wormOCR/
-├── configs/            Model and training configs (tiny.yaml is the released model)
+├── configs/            Model and training configs (tiny.yaml produced wormocr-2M)
 ├── docs/               Architecture, datasets, benchmarks, roadmap
 ├── scripts/            Dataset preparation and benchmark helpers
 ├── src/wormocr/
 │   ├── api.py          OCR class (public Python API)
 │   ├── cli.py          `wormocr` command
 │   ├── checkpoints.py  Checkpoint loading and lookup
+│   ├── hub.py          Released models, `wormocr download`, SHA-256 checks
 │   ├── preprocessing.py
 │   ├── vocabulary.py   Character set and CTC helpers
 │   ├── data/           Synthetic renderer, label-file datasets, fonts

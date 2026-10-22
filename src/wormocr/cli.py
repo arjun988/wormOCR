@@ -1,7 +1,7 @@
 """Command-line interface.
 
 Every documented command is implemented here. Checkpoints are local files.
-Nothing in this module downloads weights.
+Only `wormocr download` uses the network.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from wormocr.evaluation.metrics import cer
 from wormocr.evaluation.robustness import measure_robustness
 from wormocr.exceptions import WormOCRError
 from wormocr.export.onnx_export import export_onnx, onnx_max_abs_diff, quantize_onnx
+from wormocr.hub import DEFAULT_MODEL, RELEASES, download
 from wormocr.inference.engine import LineEngine
 from wormocr.models.crnn import build_model, count_parameters
 from wormocr.runtime import environment_report
@@ -59,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     predict = commands.add_parser("predict", help="recognize an image or PDF")
     predict.add_argument("--image", action="append", required=True)
-    predict.add_argument("--model", default="tiny", help="variant name used to find a local checkpoint")
+    predict.add_argument("--model", default=DEFAULT_MODEL, help=f"released model name (default: {DEFAULT_MODEL})")
     predict.add_argument("--checkpoint", default=None)
     predict.add_argument("--device", default="cpu")
     predict.add_argument("--mode", default="auto", choices=["auto", "line", "page"])
@@ -115,14 +116,27 @@ def build_parser() -> argparse.ArgumentParser:
     generate.set_defaults(func=command_generate)
 
     serve_cmd = commands.add_parser("serve", help="open a local web UI for images and PDFs")
-    serve_cmd.add_argument("--model", default="tiny", help="variant name used to find a local checkpoint")
+    serve_cmd.add_argument("--model", default=DEFAULT_MODEL, help=f"released model name (default: {DEFAULT_MODEL})")
     serve_cmd.add_argument("--checkpoint", default=None)
     serve_cmd.add_argument("--device", default="cpu")
     serve_cmd.add_argument("--host", default="127.0.0.1")
     serve_cmd.add_argument("--port", type=int, default=8000)
     serve_cmd.add_argument("--threads", type=int, default=None, help="CPU threads for PyTorch (default: half the logical CPUs, at most 16)")
     serve_cmd.set_defaults(func=command_serve)
+
+    download_cmd = commands.add_parser("download", help="download released weights from GitHub and verify them")
+    download_cmd.add_argument("name", nargs="?", default=DEFAULT_MODEL, choices=sorted(RELEASES))
+    download_cmd.add_argument("--dir", default=None, help="cache folder (default: $WORMOCR_HOME or ~/.cache/wormocr)")
+    download_cmd.add_argument("--force", action="store_true", help="download again even if verified files exist")
+    download_cmd.add_argument("--no-onnx", action="store_true", help="skip the ONNX file")
+    download_cmd.set_defaults(func=command_download)
     return parser
+
+
+def command_download(args: argparse.Namespace) -> int:
+    path = download(args.name, root=args.dir, force=args.force, include_onnx=not args.no_onnx)
+    print(f"{args.name} is ready: {path}")
+    return 0
 
 
 def command_serve(args: argparse.Namespace) -> int:

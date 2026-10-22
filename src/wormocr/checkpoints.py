@@ -34,10 +34,14 @@ def load_checkpoint(path: str | Path, map_location: str | torch.device = "cpu") 
     source = Path(path)
     if not source.exists():
         raise CheckpointError(
-            f"checkpoint not found: {source}. Train one with "
-            "`wormocr train --config configs/tiny.yaml --mode smoke` "
-            "or pass an explicit --checkpoint. wormOCR does not download weights."
+            f"checkpoint not found: {source}. Download the released model with "
+            "`wormocr download`, train one with `wormocr train --config configs/tiny.yaml`, "
+            "or pass an explicit --checkpoint."
         )
+    if source.suffix == ".safetensors":
+        from wormocr.hub import load_safetensors
+
+        return load_safetensors(source, map_location=map_location)
     try:
         payload = torch.load(source, map_location=map_location, weights_only=False)
     except TypeError:

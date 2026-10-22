@@ -10,6 +10,7 @@ from PIL import Image
 from wormocr.config import repo_root
 from wormocr.detection.lines import segment_page
 from wormocr.exceptions import CheckpointError, RecognitionError
+from wormocr.hub import DEFAULT_MODEL, RELEASES, local_weights
 from wormocr.inference.engine import LineEngine
 from wormocr.preprocessing import coerce_image, looks_like_line
 
@@ -68,6 +69,14 @@ def resolve_checkpoint(model: str, checkpoint: str | Path | None) -> Path:
                 f"checkpoint not found: {path}. wormOCR does not download weights."
             )
         return path
+    if model in RELEASES:
+        weights = local_weights(model)
+        if weights is None:
+            raise CheckpointError(
+                f"{model} is not downloaded yet. wormOCR never downloads weights on its own; "
+                f"run: wormocr download {model}"
+            )
+        return weights
     relative = Path("artifacts") / "checkpoints" / model / "best.pt"
     candidates = [
         Path.cwd() / relative,
@@ -89,7 +98,7 @@ class OCR:
 
     def __init__(
         self,
-        model: str = "tiny",
+        model: str = DEFAULT_MODEL,
         checkpoint: str | Path | None = None,
         device: str | None = None,
         beam_width: int = 0,
