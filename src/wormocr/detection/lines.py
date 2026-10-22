@@ -266,14 +266,11 @@ def estimate_skew(gray: np.ndarray, max_angle: float = 5.0, step: float = 0.5) -
         )
         sample = np.asarray(resized, dtype=np.uint8)
 
+    ink = Image.fromarray(binarize(sample).astype(np.uint8) * 255)
+
     def score(angle: float) -> float:
-        rotated = Image.fromarray(sample).rotate(
-            angle,
-            resample=Image.Resampling.BILINEAR,
-            expand=False,
-            fillcolor=int(np.median(sample)),
-        )
-        return projection_score(np.asarray(rotated))
+        rotated = ink.rotate(angle, resample=Image.Resampling.NEAREST, expand=False, fillcolor=0)
+        return float(np.asarray(rotated, dtype=np.float32).mean(axis=1).var())
 
     best_angle = 0.0
     best_score = score(0.0)

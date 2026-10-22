@@ -44,6 +44,7 @@ print(ocr.predict("invoice_line.png").text)
 - **Fully local.** No network calls, no telemetry, and no hidden weight downloads.
 - **Trained from scratch.** Every training image is rendered on the fly from fonts already on your machine. No third-party OCR weights or proprietary datasets are used.
 - **Complete toolkit.** One package handles training, resuming, evaluation (CER, WER, exact match), error analysis, ONNX export, benchmarking, page layout, and PDF input.
+- **Browser demo.** `wormocr serve` opens a local page where you can drop in an image or PDF and see the extracted text with line boxes.
 - **Honest metadata.** Each checkpoint records how it was trained (`smoke-tested`, `debug-trained`, or `trained`), and wormOCR warns you when you load an immature one.
 
 ## Model
@@ -167,7 +168,36 @@ wormocr predict --image page.png --model tiny --json
 wormocr predict --image document.pdf --checkpoint artifacts/checkpoints/tiny/best.pt
 ```
 
-Run `wormocr <command> --help` for every option. The available commands are `info`, `train`, `predict`, `evaluate`, `analyze`, `export`, `benchmark`, and `generate`.
+Run `wormocr <command> --help` for every option. The available commands are `info`, `train`, `predict`, `evaluate`, `analyze`, `export`, `benchmark`, `generate`, and `serve`.
+
+### Web UI
+
+```bash
+wormocr serve            # then open http://127.0.0.1:8000
+```
+
+`wormocr serve` opens a local web app for using wormOCR on your own files. Drop in a file, paste an image with <kbd>Ctrl</kbd>+<kbd>V</kbd>, or click **Try a sample invoice**. Recognition starts immediately, and the results stream in while the model works.
+
+The app fills the browser window and does not scroll as a page. The document, the results, and the activity log each scroll within their own panel.
+
+- **Document panel.** Every PDF page is shown in order with its detected line boxes. Boxes fill in as lines are recognized. Click a box to find its text, or click a text line to find its box. You can zoom in and out, fit the page to the panel, or hide the boxes.
+- **Results panel.** A Text tab grouped by page (low-confidence lines are underlined), a Lines table with page, confidence, and CTC time steps, and a JSON tab. Copy or download any of them.
+- **Activity log.** Every step the server performs, with real timings: image size, deskew angle, how many lines were found, each recognition batch, and each line as soon as it is decoded. Turn off **Line events** to show only the pipeline steps.
+- **Status bar.** Upload, Decode, Layout, Recognize, and Done are marked as each step finishes, along with per-stage timings.
+- **Modes.** Auto, Page, or Line. Changing the mode re-runs recognition.
+- **Theme.** Light and dark themes. The app follows your system setting, and you can switch with the toggle.
+
+Open `http://127.0.0.1:8000/#sample` to run the sample invoice as soon as the page loads.
+
+The server uses only the Python standard library. It listens on `127.0.0.1` by default, so files never leave your computer. It accepts uploads up to 25 MB and PDFs up to 20 pages. Use `--port`, `--device cuda`, or `--checkpoint path/to/best.pt` to change the defaults. On CPU the server uses half the logical cores, up to 16 threads, because running PyTorch on every core makes the recurrent layer slower; set the count yourself with `--threads`. On Windows the server also opts out of power throttling, which would otherwise move it to efficiency cores and make recognition 2–3 times slower.
+
+| Endpoint | Returns |
+| --- | --- |
+| `POST /api/ocr/stream?mode=auto&filename=x.png` | NDJSON events as the pipeline runs: `start`, `log`, `document`, `page`, `layout`, `line`, `page_done`, `done` (or `error`) |
+| `POST /api/ocr?mode=auto&filename=x.png` | One JSON result with pages, lines, boxes, confidences, and timings |
+| `GET /api/health` | The loaded model's name, parameter count, architecture, and device |
+
+Send the raw file bytes as the request body.
 
 ## Training
 
@@ -268,7 +298,8 @@ wormOCR/
 │   ├── training/       Training loop and EMA
 │   ├── evaluation/     CER/WER, error reports, robustness slices
 │   ├── export/         ONNX and INT8 export
-│   └── benchmark/      Benchmark report
+│   ├── benchmark/      Benchmark report
+│   └── web/            `wormocr serve`: local server and HTML/CSS/JS UI
 └── tests/              pytest suite
 ```
 

@@ -95,7 +95,7 @@ class LineEngine:
                 batch[row, :, :, :width] = tensor
                 if width < max_width:
                     batch[row, :, :, width:] = pad_value
-            with torch.no_grad():
+            with torch.inference_mode():
                 log_probs = self.model(batch.to(self.device))
             length_tensor = self.model.output_lengths(torch.tensor(widths, dtype=torch.long))
             length_tensor = torch.minimum(length_tensor, torch.tensor(log_probs.shape[1]))

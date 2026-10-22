@@ -113,7 +113,30 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--seed", type=int, default=0)
     generate.add_argument("--augment", action="store_true")
     generate.set_defaults(func=command_generate)
+
+    serve_cmd = commands.add_parser("serve", help="open a local web UI for images and PDFs")
+    serve_cmd.add_argument("--model", default="tiny", help="variant name used to find a local checkpoint")
+    serve_cmd.add_argument("--checkpoint", default=None)
+    serve_cmd.add_argument("--device", default="cpu")
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument("--port", type=int, default=8000)
+    serve_cmd.add_argument("--threads", type=int, default=None, help="CPU threads for PyTorch (default: half the logical CPUs, at most 16)")
+    serve_cmd.set_defaults(func=command_serve)
     return parser
+
+
+def command_serve(args: argparse.Namespace) -> int:
+    from wormocr.web import serve
+
+    serve(
+        model=args.model,
+        checkpoint=args.checkpoint,
+        device=args.device,
+        host=args.host,
+        port=args.port,
+        threads=args.threads,
+    )
+    return 0
 
 
 def command_info(_args: argparse.Namespace) -> int:

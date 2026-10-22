@@ -34,7 +34,7 @@ wormocr = "wormocr.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-wormocr = ["py.typed"]
+wormocr = ["py.typed", "web/static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

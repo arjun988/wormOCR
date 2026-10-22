@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>wormOCR</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111'/%3E%3Cpath d='M3.5 5.5l1.6 5 1.6-4 1.3 3 1.3-3 1.6 4 1.6-5' stroke='white' stroke-width='1.3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/" aria-label="wormOCR">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect width="16" height="16" rx="3" fill="currentColor"/><path d="M3.5 5.5l1.6 5 1.6-4 1.3 3 1.3-3 1.6 4 1.6-5" stroke="var(--bg)" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        wormOCR
+      </a>
+      <div class="file" id="file" hidden>
+        <span class="file-name" id="file-name"></span>
+        <span class="file-meta" id="file-meta"></span>
+      </div>
+    </div>
+
+    <div class="topbar-right">
+      <div class="segmented" role="radiogroup" aria-label="Recognition mode">
+        <button type="button" role="radio" data-mode="auto" aria-checked="true" title="Pick line or page layout from the image shape">Auto</button>
+        <button type="button" role="radio" data-mode="page" aria-checked="false" title="Deskew, detect lines, and read in order">Page</button>
+        <button type="button" role="radio" data-mode="line" aria-checked="false" title="Treat the whole image as one line">Line</button>
+      </div>
+      <button class="btn" id="rerun-button" type="button" disabled>Run again</button>
+      <button class="btn solid" id="open-button" type="button">Open file</button>
+      <input type="file" id="file-input" accept="image/*,.pdf,application/pdf" hidden>
+      <span class="divider" aria-hidden="true"></span>
+      <a class="icon" href="https://github.com/arjun988/wormOCR" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.89 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.56 9.56 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+      </a>
+      <button class="icon" id="theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 0 18V3Z"/><circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      </button>
+    </div>
+    <div class="progress" aria-hidden="true"><div id="progress-bar"></div></div>
+  </header>
+
+  <main class="workspace">
+    <!-- Document -->
+    <section class="pane doc-pane">
+      <div class="pane-head">
+        <span class="pane-title">Document</span>
+        <span class="muted" id="page-count"></span>
+        <div class="spacer"></div>
+        <label class="check"><input type="checkbox" id="toggle-boxes" checked> Boxes</label>
+        <div class="zoom">
+          <button class="icon small" id="zoom-out" type="button" aria-label="Zoom out">−</button>
+          <span id="zoom-label">Fit</span>
+          <button class="icon small" id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <div class="pane-body doc-body" id="doc-body">
+        <div class="empty" id="empty">
+          <label class="drop" id="drop" for="file-input">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M12 15V4m0 0L8 8m4-4 4 4M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+            <strong>Drop a PDF or image</strong>
+            <span>or click to browse. Paste with <kbd>Ctrl</kbd>+<kbd>V</kbd>.</span>
+            <span class="muted small">PNG, JPG, TIFF, WebP, BMP, PDF · up to 25 MB · processed locally</span>
+          </label>
+          <button class="link" id="sample-button" type="button">Try a sample invoice</button>
+        </div>
+        <div class="pages" id="pages"></div>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section class="pane result-pane">
+      <div class="pane-head">
+        <div class="tabs" role="tablist">
+          <button role="tab" type="button" data-tab="text" aria-selected="true">Text</button>
+          <button role="tab" type="button" data-tab="lines" aria-selected="false">Lines <span class="count" id="line-count">0</span></button>
+          <button role="tab" type="button" data-tab="json" aria-selected="false">JSON</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="icon" id="copy-button" type="button" title="Copy" aria-label="Copy">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5 15V6a2 2 0 0 1 2-2h8" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        </button>
+        <button class="icon" id="download-button" type="button" title="Download" aria-label="Download">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>
+        </button>
+      </div>
+      <div class="summary">
+        <div><span>Lines</span><b id="stat-lines">–</b></div>
+        <div><span>Confidence</span><b id="stat-confidence">–</b></div>
+        <div><span>Time</span><b id="stat-time">–</b></div>
+        <div><span>Pages</span><b id="stat-pages">–</b></div>
+      </div>
+      <div class="pane-body" data-panel="text">
+        <div class="text-view" id="text-view"><p class="placeholder">Extracted text appears here, line by line.</p></div>
+      </div>
+      <div class="pane-body" data-panel="lines" hidden>
+        <table class="lines">
+          <thead><tr><th>Pg</th><th>#</th><th>Text</th><th>Conf.</th><th title="CTC time steps">Steps</th></tr></thead>
+          <tbody id="lines-body"></tbody>
+        </table>
+      </div>
+      <div class="pane-body" data-panel="json" hidden>
+        <pre class="json" id="json-view">{}</pre>
+      </div>
+    </section>
+
+    <!-- Log -->
+    <section class="pane log-pane">
+      <div class="pane-head">
+        <span class="live" id="live-dot"></span>
+        <span class="pane-title">Activity</span>
+        <span class="muted" id="event-count"></span>
+        <div class="spacer"></div>
+        <label class="check"><input type="checkbox" id="show-lines" checked> Line events</label>
+      </div>
+      <div class="pane-body">
+        <ol class="log" id="log"><li class="log-idle">Waiting for a file.</li></ol>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <ol class="steps" id="steps">
+      <li data-step="upload">Upload</li>
+      <li data-step="decode">Decode</li>
+      <li data-step="layout">Layout</li>
+      <li data-step="recognize">Recognize <span id="recognize-count"></span></li>
+      <li data-step="done">Done</li>
+    </ol>
+    <span class="timings" id="timings"></span>
+    <div class="spacer"></div>
+    <span class="model"><span class="dot" id="model-dot"></span><span id="model-label">Connecting…</span></span>
+  </footer>
+
+  <div class="veil" id="veil" hidden><div>Drop to extract text</div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
