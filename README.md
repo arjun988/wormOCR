@@ -1,13 +1,13 @@
 # wormOCR
 
-**A small, local OCR engine for printed English text.**
+**A small, local OCR engine for printed and handwritten English text.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c.svg)](https://pytorch.org)
 [![ONNX](https://img.shields.io/badge/export-ONNX-005ced.svg)](https://onnx.ai)
 
-wormOCR reads printed text from images, scans, and PDFs on an ordinary CPU. The first released model, **wormocr-2M**, has **2.17 million parameters** (8.7 MB of weights). It runs entirely on your machine: there is no cloud API, and importing the package never downloads anything. You fetch the weights once, explicitly, with `wormocr download`.
+wormOCR reads printed and handwritten text from images, scans, and PDFs on an ordinary CPU. The released model, **wormocr-2M**, has **2.17 million parameters** (8.7 MB of weights). It runs entirely on your machine: there is no cloud API, and importing the package never downloads anything. You fetch the weights once, explicitly, with `wormocr download`.
 
 ```python
 from wormocr import OCR
@@ -17,7 +17,7 @@ print(ocr.predict("invoice_line.png").text)
 # Invoice #1042 Total: $18.50
 ```
 
-> **Status: early release (v0.1.0).** The model is accurate on clean printed lines and usable on simple documents. Real scanned forms are much harder, and the numbers below show the gap. See [Limitations](#limitations).
+> **Status: early release (v0.1.0).** Clean printed lines and receipt photos are strong. Messy notes and historical handwriting are usable and still well short of a careful human reading. See [Limitations](#limitations).
 
 ---
 
@@ -42,7 +42,7 @@ print(ocr.predict("invoice_line.png").text)
 - **Small.** 2,174,880 parameters, an 8.7 MB weights file, and an 8.7 MB ONNX graph.
 - **Fast on CPU.** About 14 ms per text line end to end (preprocessing, model, and decoding) on a laptop CPU, with no GPU needed for inference.
 - **Fully local.** No network calls, no telemetry, and no hidden weight downloads. Weights come from a pinned GitHub release only when you run `wormocr download`, and every file is checked against a SHA-256 hash.
-- **Trained from scratch.** Every training image is rendered on the fly from fonts already on your machine. No third-party OCR weights or proprietary datasets are used.
+- **One model for print and handwriting.** The released weights read printed lines, handwritten notes, names, and historical pages. No third-party OCR weights are used.
 - **Complete toolkit.** One package handles training, resuming, evaluation (CER, WER, exact match), error analysis, ONNX export, benchmarking, page layout, and PDF input.
 - **Browser demo.** `wormocr serve` opens a local page where you can drop in an image or PDF and see the extracted text with line boxes.
 - **Honest metadata.** Each checkpoint records how it was trained (`smoke-tested`, `debug-trained`, or `trained`), and wormOCR warns you when you load an immature one.
@@ -58,21 +58,28 @@ print(ocr.predict("invoice_line.png").text)
 | Input | Grayscale line, height 32 px, variable width |
 | Output stride | 4 input columns per output frame |
 | Character set | 95 printable ASCII characters (letters, digits, punctuation, space) plus the CTC blank |
-| Training data | Synthetic only: about 2.4 million rendered lines |
-| Maturity label | `trained` |
+| Training data | Synthetic print, synthetic handwriting, and real lines (GNHK, handwritten names, Bentham, CORD). FUNSD, IAM, and RxHand were evaluation only |
+| Maturity label | `trained` (best checkpoint, step 58,000 of a 60,000-step run) |
 
 ## Results
 
-All numbers come from a single local run on 22 October 2026. Full reports are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+All numbers below are from one greedy-decode run on 23 October 2026, on an NVIDIA RTX 5060 Laptop GPU. This release replaces the printed-only weights previously published under the same name. The earlier scores (0.70% CER on clean synthetic lines, 16.1% on FUNSD) describe those replaced weights and are kept in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### Accuracy
 
 | Test set | Lines | CER | WER | Exact match |
 | --- | ---: | ---: | ---: | ---: |
-| Synthetic held-out lines (clean, unseen seed) | 800 | **0.70%** | 3.7% | 96.0% |
-| [FUNSD](https://guillaumejaume.github.io/FUNSD/) test split, real scanned forms (word crops) | 8,526 | **16.1%** | 44.7% | 56.7% |
+| Synthetic printed lines | 1,000 | 3.1% | 9.1% | 90.0% |
+| [FUNSD](https://guillaumejaume.github.io/FUNSD/) test, scanned form words (evaluation only) | 8,526 | **11.5%** | 35.8% | 65.6% |
+| CORD receipt lines | 795 | **3.7%** | 14.9% | 71.4% |
+| Synthetic handwriting | 1,000 | 9.2% | 27.7% | 55.2% |
+| Handwritten form names | 26,170 | **5.3%** | 18.7% | 82.3% |
+| GNHK handwritten notes | 2,410 | 23.3% | 61.4% | 16.1% |
+| IAM lines (evaluation only) | 2,915 | 22.4% | 60.2% | 1.4% |
+| Bentham historical lines | 1,135 | 15.1% | 43.0% | 7.1% |
+| RxHand prescription words, case-insensitive (evaluation only) | 1,107 | 37.9% | 92.8% | 6.8% |
 
-CER is the character error rate and WER is the word error rate; lower is better. FUNSD was used **only for evaluation** and never for training. Its scans are noisy 1980s–90s faxes and photocopies, so it is a hard test for a 2M-parameter model trained only on synthetic text. The most common FUNSD errors are confusable glyph pairs (`T`→`I`, `O`→`Q`, `e`→`c`, `1`→`l`) and punctuation.
+CER is the character error rate and WER is the word error rate; lower is better. FUNSD, IAM, and RxHand were not used for training. Bentham lines are long, so a few wrong characters make the whole line miss exact match.
 
 ### Speed (CPU, single process)
 
@@ -85,14 +92,13 @@ Intel Core i9-14900HX, PyTorch 2.14.1, FP32. Times are medians after warmup.
 | Preprocess + model + decode | 1 | 14.4 ms | 69 lines/s |
 | Preprocess + model + decode | 8 | 42.2 ms | 189 lines/s |
 
-The end-to-end rows use generated lines, which are often narrower than 256 px, so they can be faster than the model-only rows. Loading the checkpoint takes about 60 ms.
+The network is the same as the previous release, so these CPU timings still describe it. They were measured on 22 October 2026. The end-to-end rows use generated lines, which are often narrower than 256 px, so they can be faster than the model-only rows. Loading the checkpoint takes about 60 ms.
 
 ### Training cost
 
-| Phase | Hardware | Steps | Batch size | Wall time |
+| Run | Hardware | Steps | Batch size | Wall time |
 | --- | --- | ---: | ---: | ---: |
-| Baseline | Intel i9-14900HX (CPU) | 0 → 4,000 | 32 | about 66 min |
-| Resume | NVIDIA RTX 5060 Laptop GPU, mixed precision | 4,000 → 40,000 | 64 | about 65 min |
+| wormocr-2M (this release) | NVIDIA RTX 5060 Laptop GPU, mixed precision | 60,000 | 64 | 125 min |
 
 ## Installation
 
@@ -132,7 +138,7 @@ Model weights are **not stored in git**. They are published as assets of the [`w
 | File | Contents | Size |
 | --- | --- | ---: |
 | `wormocr-2M.safetensors` | Weights (tensors only, no pickled code) | 8.7 MB |
-| `wormocr-2M.json` | Architecture config, charset, maturity label, training step | 2 KB |
+| `wormocr-2M.json` | Architecture config, charset, maturity label, training step, measured scores | 4 KB |
 | `wormocr-2M.onnx` | FP32 ONNX graph for ONNX Runtime | 8.7 MB |
 | `SHA256SUMS.txt` | SHA-256 of each file | |
 
@@ -140,6 +146,7 @@ Download and verify them once:
 
 ```bash
 wormocr download              # same as: wormocr download wormocr-2M
+wormocr download --force     # replace a copy downloaded before 23 October 2026
 ```
 
 Files go to `~/.cache/wormocr/wormocr-2M/` (set `WORMOCR_HOME` to change this, or pass `--dir`). The expected SHA-256 hashes are built into the package, so a corrupted or altered file is rejected. Nothing else in wormOCR uses the network. If the weights are missing, `OCR()` raises an error that tells you to run the download command.
@@ -220,25 +227,13 @@ Send the raw file bytes as the request body.
 
 ## Training
 
-wormocr-2M was trained on synthetic lines rendered from fonts installed on your system. On Windows these come from `C:\Windows\Fonts`. You can point `data.font_dir` at any folder of `.ttf` files. No images are stored: each sample is generated from its index and the seed, so a run can be reproduced exactly.
+Synthetic lines are rendered on the fly from fonts on your machine. On Windows these come from `C:\Windows\Fonts`. You can point `data.font_dir` at any folder of `.ttf` files. Each synthetic sample is generated from its index and the seed, so a run can be reproduced exactly.
 
-wormocr-2M was produced in two phases with `configs/tiny.yaml`. The released weights are the best validation checkpoint, from step 38,000 of 40,000.
+The released wormocr-2M weights are the best validation checkpoint from `configs/unified.yaml`: step 58,000 of a 60,000-step GPU run (about 2 hours on an RTX 5060 Laptop, batch 64, mixed precision). Training started from the previous printed-only weights and mixed synthetic print, synthetic handwriting, and real line crops.
 
-1. CPU baseline, using `configs/tiny.yaml` as written. This run was stopped after its step-4,000 checkpoint.
-
-   ```bash
-   wormocr train --config configs/tiny.yaml --mode baseline
-   ```
-
-2. GPU resume to step 40,000:
-
-   ```bash
-   wormocr train --config configs/tiny.yaml --mode resume \
-     --checkpoint artifacts/checkpoints/tiny/last.pt --device cuda \
-     --set train.amp=true --set train.batch_size=64 --set train.num_workers=14 \
-     --set train.max_steps=40000 --set train.max_minutes=240 \
-     --set train.warmup_steps=300 --set data.train_samples=3000000 --set train.log_every=100
-   ```
+```bash
+wormocr train --config configs/unified.yaml --mode baseline
+```
 
 Any config field can be overridden with `--set section.key=value`. Training writes `best.pt` (lowest validation CER), `last.pt` (newest step, used for resuming), `best_weights.pt` (weights only, for distribution), and `train_log.jsonl`.
 
@@ -264,9 +259,9 @@ wormocr train --config configs/tiny.yaml --mode baseline \
 wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --synthetic-samples 800
 wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --labels data/val.tsv --image-root data/images --errors errors.md
 
-# Reproduce the FUNSD number (download FUNSD yourself; it is licensed for non-commercial research)
+# Score a label file. FUNSD is evaluation only; download it yourself.
 python scripts/prepare_funsd.py artifacts/datasets/funsd/dataset/testing_data artifacts/datasets/funsd_test
-wormocr evaluate --model artifacts/checkpoints/tiny/best.pt --labels artifacts/datasets/funsd_test/labels.tsv
+wormocr evaluate --model artifacts/checkpoints/unified/best.pt --labels artifacts/datasets/funsd_test/labels.tsv
 
 # ONNX export (checked against PyTorch; max abs difference 5e-5 on the released model)
 wormocr export --model artifacts/checkpoints/tiny/best.pt --format onnx --output artifacts/export/tiny.onnx
@@ -301,7 +296,7 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DATASET
 
 ```text
 wormOCR/
-├── configs/            Model and training configs (tiny.yaml produced wormocr-2M)
+├── configs/            Model and training configs (unified.yaml produced the released wormocr-2M)
 ├── docs/               Architecture, datasets, benchmarks, roadmap
 ├── scripts/            Dataset preparation and benchmark helpers
 ├── src/wormocr/
@@ -326,8 +321,8 @@ wormOCR/
 ## Limitations
 
 - **English printable ASCII only.** Accented letters, symbols such as `€` or `°`, and other scripts are rejected with an error rather than silently dropped.
-- **Printed text only.** Handwriting is not supported.
-- **Real scans are much harder than clean text.** Expect a CER of about 16% on noisy forms like FUNSD, versus under 1% on clean lines. Very small crops of one or two characters are a known weak spot.
+- **Messy handwriting is still hard.** Historical pages and notes in the wild are around 15–23% character error. Prescription words are harder still (about 38% case-insensitive on RxHand, which was not used for training).
+- **Real scans are harder than clean text.** FUNSD form words are about 11.5% character error. Very small crops of one or two characters remain a weak spot.
 - **Simple page layout.** Page layout uses projection profiles, not a learned text detector. Tables, rotated text, and cluttered layouts can merge or drop lines.
 - **No language-model correction.** The output is exactly what the decoder emits.
 - **No external comparison yet.** Tesseract and PaddleOCR were not installed on the benchmark machine, so no accuracy comparison against them has been run.

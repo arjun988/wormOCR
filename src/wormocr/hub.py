@@ -39,11 +39,11 @@ RELEASES: dict[str, Release] = {
         name="wormocr-2M",
         tag="wormocr-2M",
         files={
-            "wormocr-2M.safetensors": "eee974be652164b485954dd181940c981172bb49c4c2f04dee02fcc06e5ae8e1",
-            "wormocr-2M.json": "b2665906e913d8b8496ece94c029f5a01fc588fce4857462e87798d38e20f7ad",
-            "wormocr-2M.onnx": "8b7a5bbd92f0f6dd2945b6db2d7530eeca407d07df684b9942a0a5dfcef1cdea",
+            "wormocr-2M.safetensors": "a6bee28adfc15f219fc6ff9d0dccdce45dc92c73559bc5474dda3d7e887376f2",
+            "wormocr-2M.json": "62b7c98be82c34684e29da2d1c97e2a3efac4ce3eae4b4cd0153845f608e24c2",
+            "wormocr-2M.onnx": "18498d163622022c8d48cf3fca7fa3e2c6bbc140db720e293f4d9a2f7b4cb25e",
         },
-        description="First wormOCR release: 2,174,880 parameters, printed English (ASCII) text lines.",
+        description="2,174,880 parameters. Printed and handwritten English lines. Replaces the printed-only weights previously published on this tag.",
     ),
 }
 

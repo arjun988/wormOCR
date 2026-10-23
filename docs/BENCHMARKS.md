@@ -1,6 +1,6 @@
 # Benchmarks
 
-The numbers below come from one local run on 22 October 2026. The raw reports are in `artifacts/benchmarks/`, which is gitignored. Synthetic scores measure how well the model learned the renderer. FUNSD measures real scanned forms.
+These numbers are the **printed-only** weights that were published as `wormocr-2M` on 22 October 2026. That release was replaced on 23 October 2026 by the printed-and-handwriting weights, which keep the same name and parameter count. The current scores are in the README. The raw reports for the table below are in `artifacts/benchmarks/`, which is gitignored.
 
 ## Checkpoint
 

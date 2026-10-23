@@ -48,7 +48,7 @@ def main() -> None:
         "license": "MIT",
         "maturity": payload.get("maturity", "untrained"),
         "training_step": payload.get("step"),
-        "synthetic_validation_cer": payload.get("best_cer"),
+        "validation_cer": payload.get("best_cer"),
         "wormocr_version": __version__,
         "config": config,
         "charset": payload["charset"],

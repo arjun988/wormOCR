@@ -17,7 +17,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from wormocr.checkpoints import load_checkpoint, public_config, save_checkpoint
-from wormocr.config import dump_config
+from wormocr.config import dump_config, repo_root
 from wormocr.data.dataset import LabelDataset, OnlineSynthDataset, collate_lines
 from wormocr.evaluation.metrics import MetricTotals
 from wormocr.exceptions import ConfigError, DataError, WormOCRError
@@ -91,6 +91,11 @@ def build_vocabulary(config: dict) -> Vocabulary:
 def build_datasets(config: dict) -> tuple[torch.utils.data.Dataset, torch.utils.data.Dataset | None, Vocabulary]:
     vocabulary = build_vocabulary(config)
     data = config["data"]
+    if data.get("sources"):
+        from wormocr.data.mixed import build_mixed
+
+        train, val = build_mixed(config, repo_root())
+        return train, val, vocabulary
     val: torch.utils.data.Dataset | None = None
     if data.get("val_labels"):
         val_root = data.get("val_image_root") or str(Path(data["val_labels"]).parent)
@@ -295,6 +300,35 @@ def _checkpoint_payload(
     return payload
 
 
+def initialize_weights(model: nn.Module, source: str, vocabulary: Vocabulary, device: torch.device) -> None:
+    """Start from another model's weights with a fresh optimizer and step count.
+
+    `source` is a checkpoint path or a released model name. Tensors whose shape
+    differs (for example the projection after an image_height change) keep
+    their fresh initialization.
+    """
+    from wormocr.hub import RELEASES, local_weights
+
+    path = local_weights(source) if source in RELEASES else Path(source)
+    if path is None:
+        raise WormOCRError(f"{source} is not downloaded. Run: wormocr download {source}")
+    payload = load_checkpoint(path, map_location=device)
+    if payload["charset"] != vocabulary.charset:
+        raise WormOCRError(f"{source} uses a different charset than this config")
+    own = model.state_dict()
+    loaded = {
+        name: tensor
+        for name, tensor in payload["model_state"].items()
+        if name in own and own[name].shape == tensor.shape
+    }
+    model.load_state_dict(loaded, strict=False)
+    missing = [name for name in own if name not in loaded]
+    logger.info(
+        "initialized from %s: %s tensors loaded, %s kept fresh %s",
+        source, len(loaded), len(missing), missing[:6] if missing else "",
+    )
+
+
 def train(config: dict, mode: str = "baseline", resume_from: str | None = None) -> TrainResult:
     _ensure_logging()
     if mode == "resume" and not resume_from:
@@ -329,6 +363,11 @@ def train(config: dict, mode: str = "baseline", resume_from: str | None = None) 
         history = list(payload.get("history") or [])
         previous_maturity = payload.get("maturity")
         logger.info("resumed from %s at step %s", resume_from, step)
+    elif train_cfg.get("init_from"):
+        initialize_weights(model, str(train_cfg["init_from"]), vocabulary, device)
+        if ema is not None:
+            ema.load_state_dict(model.state_dict())
+            ema.rnn.flatten_parameters()
     export_model = ema if ema is not None else model
 
     workers = int(train_cfg.get("num_workers") or 0)

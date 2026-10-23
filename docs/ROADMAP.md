@@ -16,7 +16,7 @@ Status of the first build. "Done" means the code path exists and the test suite 
 - [x] Parameter counts measured for micro, tiny, and small.
 - [x] Four clean lines can be memorized by the training loss and greedy decoder.
 - [x] Width stride 4, EMA weights, and scan-style augmentation. These got the tiny model past the CTC blank plateau.
-- [x] wormOCR tiny (2.17M parameters) trained for 40,000 steps: 0.70% CER on synthetic validation, 16.1% CER on FUNSD test word crops. See docs/BENCHMARKS.md.
+- [x] wormOCR tiny (2.17M parameters) trained for 40,000 steps: 0.70% CER on synthetic validation, 16.1% CER on FUNSD test word crops. See docs/BENCHMARKS.md. Those weights were replaced on 23 October 2026 by the printed-and-handwriting wormocr-2M release (same parameter count).
 
 ## Measured, not finished
 
