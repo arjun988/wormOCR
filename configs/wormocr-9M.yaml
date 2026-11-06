@@ -1,0 +1,69 @@
+# wormocr-9M: same training files as wormocr-2M, larger network, fresh weights.
+# Counted at 8,776,416 parameters. Shapes do not match wormocr-2M, so there is
+# no init_from. GPU only. Do not start this until asked.
+# Batch 16 with 4 accumulation steps is one optimizer update of 64 lines.
+# IAM, RxHand, and FUNSD stay out of sources.
+seed: 2026
+device: cuda
+model:
+  name: wormocr-9M
+  image_height: 48
+  width_stride: 4
+  channels: [96, 192, 320, 384]
+  separable: true
+  rnn_hidden: 512
+  rnn_layers: 2
+  rnn_dropout: 0.0
+  proj_size: 512
+data:
+  train_samples: 4000000
+  val_per_source: 300
+  font_size_min: 14
+  font_size_max: 36
+  max_chars: 40
+  augment: true
+  max_width: 1600
+  handwriting_font_dir: artifacts/fonts/handwriting
+  sources:
+    - {name: printed_synth, kind: synthetic, weight: 0.30}
+    - {name: handwriting_synth, kind: handwriting, weight: 0.30}
+    - name: gnhk
+      kind: labels
+      weight: 0.15
+      labels: artifacts/datasets/prepared/gnhk/train.tsv
+      val_labels: artifacts/datasets/prepared/gnhk/val.tsv
+    - name: hw_names
+      kind: labels
+      weight: 0.10
+      labels: artifacts/datasets/prepared/hw_names/train.tsv
+      val_labels: artifacts/datasets/prepared/hw_names/val.tsv
+    - name: bentham
+      kind: labels
+      weight: 0.10
+      labels: artifacts/datasets/prepared/bentham/train.tsv
+      val_labels: artifacts/datasets/prepared/bentham/val.tsv
+    - name: cord
+      kind: labels
+      weight: 0.05
+      labels: artifacts/datasets/prepared/cord/train.tsv
+      val_labels: artifacts/datasets/prepared/cord/val.tsv
+train:
+  epochs: 2
+  batch_size: 16
+  grad_accum_steps: 4
+  lr: 0.0008
+  min_lr_ratio: 0.05
+  weight_decay: 0.0001
+  grad_clip: 5.0
+  warmup_steps: 1000
+  max_steps: 100000
+  max_minutes: 720
+  early_stopping_patience: 8
+  checkpoint_dir: artifacts/checkpoints/wormocr-9M
+  log_every: 100
+  save_every: 0
+  amp: true
+  num_workers: 14
+  torch_threads: 12
+  ema_decay: 0.999
+  eval_every: 1000

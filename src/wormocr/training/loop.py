@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import random
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -128,6 +129,10 @@ def make_loader(dataset, batch_size: int, shuffle: bool, seed: int, num_workers:
     workers = int(num_workers)
     extra: dict = {}
     if workers > 0:
+        if sys.platform == "win32":
+            # Named shared-memory events vanish when a worker exits, and the
+            # parent then dies with "Couldn't open shared event" (WinError 2).
+            torch.multiprocessing.set_sharing_strategy("file_system")
         extra = {"persistent_workers": True, "prefetch_factor": 4}
     return DataLoader(
         dataset,
@@ -380,7 +385,10 @@ def train(config: dict, mode: str = "baseline", resume_from: str | None = None) 
     epochs = int(train_cfg["epochs"])
     start_step = step
     max_steps = int(train_cfg["max_steps"]) if train_cfg.get("max_steps") else None
-    local_steps = schedule_span(start_step, epochs, len(loader), max_steps)
+    accum = max(1, int(train_cfg.get("grad_accum_steps") or 1))
+    # An optimizer step is `accum` loader batches. The schedule and max_steps
+    # count those steps, so batch 16 with accum 4 matches a batch-64 update.
+    local_steps = schedule_span(start_step, epochs, max(1, len(loader) // accum), max_steps)
     planned = start_step + local_steps
     eval_every = int(train_cfg.get("eval_every") or 0)
     patience = int(train_cfg.get("early_stopping_patience") or 0)
@@ -390,12 +398,14 @@ def train(config: dict, mode: str = "baseline", resume_from: str | None = None) 
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     (checkpoint_dir / "config.yaml").write_text(dump_config(config), encoding="utf-8")
     logger.info(
-        "training %s on %s | parameters=%s | samples=%s | planned_steps=%s | workers=%s | ema=%s | mode=%s",
+        "training %s on %s | parameters=%s | samples=%s | planned_steps=%s | batch=%s | accum=%s | workers=%s | ema=%s | mode=%s",
         config["model"].get("name", "recognizer"),
         device,
         count_parameters(model),
         len(dataset),
         local_steps,
+        batch_size,
+        accum,
         workers,
         ema_decay or "off",
         mode,
@@ -436,6 +446,8 @@ def train(config: dict, mode: str = "baseline", resume_from: str | None = None) 
 
     try:
         stopped = False
+        pending = 0
+        optimizer.zero_grad(set_to_none=True)
         for epoch in range(start_epoch, start_epoch + epochs):
             for batch in loader:
                 if max_steps is not None and step >= max_steps:
@@ -456,25 +468,18 @@ def train(config: dict, mode: str = "baseline", resume_from: str | None = None) 
                     group["lr"] = lr
                 images = batch["images"].to(device)
                 paused = _batchnorm_eval_if_tiny(model, images.shape[0])
-                optimizer.zero_grad(set_to_none=True)
                 try:
                     if use_amp and scaler is not None:
                         with torch.autocast(device_type="cuda", dtype=torch.float16):
                             loss, _log_probs, _lengths = compute_loss(
                                 model, images, batch["texts"], batch["widths"], vocabulary
                             )
-                        scaler.scale(loss).backward()
-                        scaler.unscale_(optimizer)
-                        nn.utils.clip_grad_norm_(model.parameters(), float(train_cfg["grad_clip"]))
-                        scaler.step(optimizer)
-                        scaler.update()
+                        scaler.scale(loss / accum).backward()
                     else:
                         loss, _log_probs, _lengths = compute_loss(
                             model, images, batch["texts"], batch["widths"], vocabulary
                         )
-                        loss.backward()
-                        nn.utils.clip_grad_norm_(model.parameters(), float(train_cfg["grad_clip"]))
-                        optimizer.step()
+                        (loss / accum).backward()
                 except RuntimeError as exc:
                     if "out of memory" in str(exc).lower():
                         if device.type == "cuda":
@@ -488,6 +493,19 @@ def train(config: dict, mode: str = "baseline", resume_from: str | None = None) 
                         module.train()
                 if not torch.isfinite(loss):
                     raise WormOCRError("loss became non-finite. Lower train.lr and try again.")
+                pending += 1
+                if pending < accum:
+                    continue
+                pending = 0
+                if use_amp and scaler is not None:
+                    scaler.unscale_(optimizer)
+                    nn.utils.clip_grad_norm_(model.parameters(), float(train_cfg["grad_clip"]))
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    nn.utils.clip_grad_norm_(model.parameters(), float(train_cfg["grad_clip"]))
+                    optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
                 if ema is not None:
                     _update_ema(ema, model, min(ema_decay, (1.0 + step) / (10.0 + step)))
                 final_loss = float(loss.detach().cpu())

@@ -6,10 +6,40 @@ from wormocr.checkpoints import load_checkpoint
 from wormocr.config import load_config
 from wormocr.data.fonts import discover_fonts
 from wormocr.inference.decode import greedy_decode
-from wormocr.models.crnn import CRNN, build_model
+from wormocr.models.crnn import CRNN, build_model, count_parameters
 from wormocr.preprocessing import prepare_line
 from wormocr.training.loop import compute_loss, maturity_for, schedule_span, train
 from wormocr.vocabulary import Vocabulary
+
+
+def test_wormocr_9m_is_the_counted_size_and_does_not_copy_wormocr_2m():
+    config = load_config("configs/wormocr-9M.yaml")
+    assert config["train"].get("init_from") in (None, "")
+    assert config["model"]["image_height"] == 48
+    model = build_model(config, Vocabulary().size)
+    assert count_parameters(model) == 8_776_416
+
+
+def test_gradient_accumulation_counts_optimizer_steps(tmp_path):
+    config = load_config(
+        "configs/debug.yaml",
+        [
+            f"train.checkpoint_dir={tmp_path.as_posix()}",
+            "train.max_steps=2",
+            "train.grad_accum_steps=2",
+            "train.batch_size=4",
+            "train.eval_every=0",
+            "train.early_stopping_patience=0",
+            "data.train_samples=16",
+            "data.val_samples=4",
+            "data.augment=false",
+            "train.epochs=1",
+            "train.log_every=1",
+        ],
+        mode="baseline",
+    )
+    result = train(config, mode="baseline")
+    assert result.steps == 2
 
 
 def test_resume_schedule_is_counted_from_zero():
