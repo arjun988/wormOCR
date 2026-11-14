@@ -4,13 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wormocr"
-version = "0.1.0"
-description = "Small, CPU-friendly open-source OCR for text lines and simple pages."
+version = "1.0.0"
+description = "Local OCR for printed and handwritten English text. Small CRNN models, CPU-friendly, no cloud."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "arjun shukla" }]
-keywords = ["ocr", "ctc", "crnn", "pytorch", "onnx"]
+keywords = ["ocr", "ctc", "crnn", "pytorch", "onnx", "handwriting", "document"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
 dependencies = [
     "numpy>=1.26",
     "pillow>=10",
@@ -27,6 +40,8 @@ pdf = ["pypdfium2>=4"]
 [project.urls]
 Homepage = "https://github.com/arjun988/wormOCR"
 Repository = "https://github.com/arjun988/wormOCR"
+Issues = "https://github.com/arjun988/wormOCR/issues"
+Release-notes = "https://github.com/arjun988/wormOCR/releases"
 
 [project.scripts]
 wormocr = "wormocr.cli:main"
