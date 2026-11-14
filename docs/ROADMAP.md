@@ -17,12 +17,13 @@ Status of the first build. "Done" means the code path exists and the test suite 
 - [x] Four clean lines can be memorized by the training loss and greedy decoder.
 - [x] Width stride 4, EMA weights, and scan-style augmentation. These got the tiny model past the CTC blank plateau.
 - [x] wormOCR tiny (2.17M parameters) trained for 40,000 steps: 0.70% CER on synthetic validation, 16.1% CER on FUNSD test word crops. See docs/BENCHMARKS.md. Those weights were replaced on 23 October 2026 by the printed-and-handwriting wormocr-2M release (same parameter count).
+- [x] wormocr-9M (8.78M parameters) trained on the same mix, released alongside wormocr-2M. Best at step 19,000. Lower CER on GNHK, Bentham, IAM, FUNSD, and CORD; printed synthetic slightly higher; names essentially tied.
 
 ## Measured, not finished
 
 - [ ] Lower the FUNSD error rate: confusable glyphs (`T`/`I`, `O`/`Q`, `e`/`c`), punctuation, and very short crops.
 - [ ] The same images run through Tesseract or an English PP-OCR mobile model.
-- [ ] Publish `best_weights.pt` as a release asset.
+- [ ] CPU latency table for wormocr-9M.
 - [ ] INT8 that keeps accuracy. Dynamic INT8 saved 7% of the size and drifted too far, so FP32 ONNX stays the default.
 
 ## Later

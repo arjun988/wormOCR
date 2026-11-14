@@ -45,6 +45,16 @@ RELEASES: dict[str, Release] = {
         },
         description="2,174,880 parameters. Printed and handwritten English lines. Replaces the printed-only weights previously published on this tag.",
     ),
+    "wormocr-9M": Release(
+        name="wormocr-9M",
+        tag="wormocr-9M",
+        files={
+            "wormocr-9M.safetensors": "e10fbc8d96fb230056e9c10a4083ab971306179ada66b7cfc644fbf3e0402183",
+            "wormocr-9M.json": "cc6ca2695be4dde105d61591c5175653c02502bdc33711d59ec633bb470c05a9",
+            "wormocr-9M.onnx": "9eb068021344ce07f6846bbe7915d3d4919c1f5e9cd2de441b6fe71f656e51de",
+        },
+        description="8,776,416 parameters. Same training mix as wormocr-2M, larger CRNN (height 48). Stronger on handwritten notes, IAM, and Bentham.",
+    ),
 }
 
 

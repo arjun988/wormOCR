@@ -7,7 +7,7 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c.svg)](https://pytorch.org)
 [![ONNX](https://img.shields.io/badge/export-ONNX-005ced.svg)](https://onnx.ai)
 
-wormOCR reads printed and handwritten text from images, scans, and PDFs on an ordinary CPU. The released model, **wormocr-2M**, has **2.17 million parameters** (8.7 MB of weights). It runs entirely on your machine: there is no cloud API, and importing the package never downloads anything. You fetch the weights once, explicitly, with `wormocr download`.
+wormOCR reads printed and handwritten text from images, scans, and PDFs on an ordinary CPU. Two models are released: **wormocr-2M** (2.17 million parameters, 8.7 MB) and **wormocr-9M** (8.78 million parameters, 33.5 MB). Both run entirely on your machine: there is no cloud API, and importing the package never downloads anything. You fetch the weights once, explicitly, with `wormocr download`.
 
 ```python
 from wormocr import OCR
@@ -15,6 +15,8 @@ from wormocr import OCR
 ocr = OCR()                                   # wormocr-2M, after `wormocr download`
 print(ocr.predict("invoice_line.png").text)
 # Invoice #1042 Total: $18.50
+
+ocr9 = OCR(model="wormocr-9M")                # after `wormocr download wormocr-9M`
 ```
 
 > **Status: early release (v0.1.0).** Clean printed lines and receipt photos are strong. Messy notes and historical handwriting are usable and still well short of a careful human reading. See [Limitations](#limitations).
@@ -39,51 +41,52 @@ print(ocr.predict("invoice_line.png").text)
 
 ## Highlights
 
-- **Small.** 2,174,880 parameters, an 8.7 MB weights file, and an 8.7 MB ONNX graph.
-- **Fast on CPU.** About 14 ms per text line end to end (preprocessing, model, and decoding) on a laptop CPU, with no GPU needed for inference.
+- **Small.** wormocr-2M is 2,174,880 parameters and 8.7 MB. wormocr-9M is 8,776,416 parameters and 33.5 MB.
+- **Fast on CPU.** About 14 ms per text line end to end with wormocr-2M (preprocessing, model, and decoding) on a laptop CPU, with no GPU needed for inference.
 - **Fully local.** No network calls, no telemetry, and no hidden weight downloads. Weights come from a pinned GitHub release only when you run `wormocr download`, and every file is checked against a SHA-256 hash.
-- **One model for print and handwriting.** The released weights read printed lines, handwritten notes, names, and historical pages. No third-party OCR weights are used.
+- **Print and handwriting.** Both released models read printed lines, handwritten notes, names, and historical pages. No third-party OCR weights are used.
 - **Complete toolkit.** One package handles training, resuming, evaluation (CER, WER, exact match), error analysis, ONNX export, benchmarking, page layout, and PDF input.
 - **Browser demo.** `wormocr serve` opens a local page where you can drop in an image or PDF and see the extracted text with line boxes.
 - **Honest metadata.** Each checkpoint records how it was trained (`smoke-tested`, `debug-trained`, or `trained`), and wormOCR warns you when you load an immature one.
 
 ## Model
 
-| | wormocr-2M |
-| --- | --- |
-| Parameters | 2,174,880 (2.17M) |
-| Weights file (`wormocr-2M.safetensors`, FP32) | 8.7 MB |
-| ONNX (FP32) | 8.7 MB |
-| Architecture | CRNN: depthwise-separable CNN, then a 2-layer BiGRU (256 hidden units), then a CTC head |
-| Input | Grayscale line, height 32 px, variable width |
-| Output stride | 4 input columns per output frame |
-| Character set | 95 printable ASCII characters (letters, digits, punctuation, space) plus the CTC blank |
-| Training data | Synthetic print, synthetic handwriting, and real lines (GNHK, handwritten names, Bentham, CORD). FUNSD, IAM, and RxHand were evaluation only |
-| Maturity label | `trained` (best checkpoint, step 58,000 of a 60,000-step run) |
+| | wormocr-2M | wormocr-9M |
+| --- | --- | --- |
+| Parameters | 2,174,880 (2.17M) | 8,776,416 (8.78M) |
+| Weights file (`.safetensors`, FP32) | 8.7 MB | 33.5 MB |
+| ONNX (FP32) | 8.7 MB | 33.5 MB |
+| Architecture | CRNN: separable CNN, 2-layer BiGRU (256), CTC | Same family: separable CNN, 2-layer BiGRU (512), CTC |
+| Input | Grayscale line, height 32 px, variable width | Grayscale line, height 48 px, variable width |
+| Output stride | 4 | 4 |
+| Character set | 95 printable ASCII + CTC blank | Same |
+| Training data | Synthetic print, synthetic handwriting, GNHK, handwritten names, Bentham, CORD. FUNSD, IAM, and RxHand evaluation only | Same mix |
+| Maturity label | `trained` (best at step 58,000 of 60,000) | `trained` (best at step 19,000; early-stopped at 30,000) |
+| Default for `OCR()` | Yes | No; pass `model="wormocr-9M"` |
 
 ## Results
 
-All numbers below are from one greedy-decode run on 23 October 2026, on an NVIDIA RTX 5060 Laptop GPU. This release replaces the printed-only weights previously published under the same name. The earlier scores (0.70% CER on clean synthetic lines, 16.1% on FUNSD) describe those replaced weights and are kept in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+CER (character error rate) below is greedy decode on an NVIDIA RTX 5060 Laptop GPU. wormocr-2M was measured on 23 October 2026. wormocr-9M was measured on 6 November 2026, on the same frozen test lines. Lower is better. The older printed-only scores (0.70% CER on clean synthetic lines, 16.1% on FUNSD) are kept in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### Accuracy
 
-| Test set | Lines | CER | WER | Exact match |
-| --- | ---: | ---: | ---: | ---: |
-| Synthetic printed lines | 1,000 | 3.1% | 9.1% | 90.0% |
-| [FUNSD](https://guillaumejaume.github.io/FUNSD/) test, scanned form words (evaluation only) | 8,526 | **11.5%** | 35.8% | 65.6% |
-| CORD receipt lines | 795 | **3.7%** | 14.9% | 71.4% |
-| Synthetic handwriting | 1,000 | 9.2% | 27.7% | 55.2% |
-| Handwritten form names | 26,170 | **5.3%** | 18.7% | 82.3% |
-| GNHK handwritten notes | 2,410 | 23.3% | 61.4% | 16.1% |
-| IAM lines (evaluation only) | 2,915 | 22.4% | 60.2% | 1.4% |
-| Bentham historical lines | 1,135 | 15.1% | 43.0% | 7.1% |
-| RxHand prescription words, case-insensitive (evaluation only) | 1,107 | 37.9% | 92.8% | 6.8% |
+| Test set | Lines | wormocr-2M CER | wormocr-9M CER |
+| --- | ---: | ---: | ---: |
+| Synthetic printed lines | 1,000 | 3.1% | 3.7% |
+| [FUNSD](https://guillaumejaume.github.io/FUNSD/) test, scanned form words (evaluation only) | 8,526 | 11.5% | **10.2%** |
+| CORD receipt lines | 795 | 3.7% | **3.1%** |
+| Synthetic handwriting | 1,000 | 9.2% | **7.1%** |
+| Handwritten form names | 26,170 | **5.3%** | 5.3% |
+| GNHK handwritten notes | 2,410 | 23.3% | **19.2%** |
+| IAM lines (evaluation only) | 2,915 | 22.4% | **18.3%** |
+| Bentham historical lines | 1,135 | 15.1% | **8.8%** |
+| RxHand prescription words, case-insensitive (evaluation only) | 1,107 | 37.9% | **35.2%** |
 
-CER is the character error rate and WER is the word error rate; lower is better. FUNSD, IAM, and RxHand were not used for training. Bentham lines are long, so a few wrong characters make the whole line miss exact match.
+FUNSD, IAM, and RxHand were not used for training. Bentham lines are long, so a few wrong characters make the whole line miss exact match.
 
 ### Speed (CPU, single process)
 
-Intel Core i9-14900HX, PyTorch 2.14.1, FP32. Times are medians after warmup.
+Intel Core i9-14900HX, PyTorch 2.14.1, FP32. Times are medians after warmup for **wormocr-2M**.
 
 | Path | Batch | Median latency | Throughput |
 | --- | ---: | ---: | ---: |
@@ -92,13 +95,14 @@ Intel Core i9-14900HX, PyTorch 2.14.1, FP32. Times are medians after warmup.
 | Preprocess + model + decode | 1 | 14.4 ms | 69 lines/s |
 | Preprocess + model + decode | 8 | 42.2 ms | 189 lines/s |
 
-The network is the same as the previous release, so these CPU timings still describe it. They were measured on 22 October 2026. The end-to-end rows use generated lines, which are often narrower than 256 px, so they can be faster than the model-only rows. Loading the checkpoint takes about 60 ms.
+These timings were measured on 22 October 2026. The end-to-end rows use generated lines, which are often narrower than 256 px, so they can be faster than the model-only rows. Loading wormocr-2M takes about 60 ms. wormocr-9M is larger and slower; use it when the handwriting gains matter more than size.
 
 ### Training cost
 
-| Run | Hardware | Steps | Batch size | Wall time |
+| Run | Hardware | Steps | Effective batch | Wall time |
 | --- | --- | ---: | ---: | ---: |
-| wormocr-2M (this release) | NVIDIA RTX 5060 Laptop GPU, mixed precision | 60,000 | 64 | 125 min |
+| wormocr-2M | NVIDIA RTX 5060 Laptop GPU, mixed precision | 60,000 | 64 | 125 min |
+| wormocr-9M | NVIDIA RTX 5060 Laptop GPU, mixed precision | 30,000 (best at 19,000) | 64 (16 × 4 accum) | about 150 min |
 
 ## Installation
 
@@ -133,28 +137,28 @@ This prints the Python and PyTorch versions, whether CUDA is available, and how 
 
 ### Weights
 
-Model weights are **not stored in git**. They are published as assets of the [`wormocr-2M` GitHub release](https://github.com/arjun988/wormOCR/releases/tag/wormocr-2M):
+Model weights are **not stored in git**. They are published as GitHub release assets:
 
-| File | Contents | Size |
+| Release | Files | Size |
 | --- | --- | ---: |
-| `wormocr-2M.safetensors` | Weights (tensors only, no pickled code) | 8.7 MB |
-| `wormocr-2M.json` | Architecture config, charset, maturity label, training step, measured scores | 4 KB |
-| `wormocr-2M.onnx` | FP32 ONNX graph for ONNX Runtime | 8.7 MB |
-| `SHA256SUMS.txt` | SHA-256 of each file | |
+| [`wormocr-2M`](https://github.com/arjun988/wormOCR/releases/tag/wormocr-2M) | `.safetensors`, `.json`, `.onnx`, `SHA256SUMS.txt` | 8.7 MB weights |
+| [`wormocr-9M`](https://github.com/arjun988/wormOCR/releases/tag/wormocr-9M) | `.safetensors`, `.json`, `.onnx`, `SHA256SUMS.txt` | 33.5 MB weights |
 
 Download and verify them once:
 
 ```bash
-wormocr download              # same as: wormocr download wormocr-2M
-wormocr download --force     # replace a copy downloaded before 23 October 2026
+wormocr download                 # same as: wormocr download wormocr-2M
+wormocr download wormocr-9M      # larger model
+wormocr download wormocr-2M --force   # replace a copy downloaded before 23 October 2026
 ```
 
-Files go to `~/.cache/wormocr/wormocr-2M/` (set `WORMOCR_HOME` to change this, or pass `--dir`). The expected SHA-256 hashes are built into the package, so a corrupted or altered file is rejected. Nothing else in wormOCR uses the network. If the weights are missing, `OCR()` raises an error that tells you to run the download command.
+Files go to `~/.cache/wormocr/<name>/` (set `WORMOCR_HOME` to change this, or pass `--dir`). The expected SHA-256 hashes are built into the package, so a corrupted or altered file is rejected. Nothing else in wormOCR uses the network. If the weights are missing, `OCR()` raises an error that tells you to run the download command.
 
 You can also load any local weights file directly. This works for released `.safetensors` files (with the `.json` file next to them) and for `.pt` checkpoints from your own training:
 
 ```python
 OCR(checkpoint="path/to/wormocr-2M.safetensors")
+OCR(model="wormocr-9M")
 OCR(checkpoint="artifacts/checkpoints/tiny/best.pt")
 ```
 
@@ -229,10 +233,11 @@ Send the raw file bytes as the request body.
 
 Synthetic lines are rendered on the fly from fonts on your machine. On Windows these come from `C:\Windows\Fonts`. You can point `data.font_dir` at any folder of `.ttf` files. Each synthetic sample is generated from its index and the seed, so a run can be reproduced exactly.
 
-The released wormocr-2M weights are the best validation checkpoint from `configs/unified.yaml`: step 58,000 of a 60,000-step GPU run (about 2 hours on an RTX 5060 Laptop, batch 64, mixed precision). Training started from the previous printed-only weights and mixed synthetic print, synthetic handwriting, and real line crops.
+The released wormocr-2M weights are the best validation checkpoint from `configs/unified.yaml`: step 58,000 of a 60,000-step GPU run (about 2 hours on an RTX 5060 Laptop, batch 64, mixed precision). Training started from the previous printed-only weights and mixed synthetic print, synthetic handwriting, and real line crops. wormocr-9M uses the same data mix with a larger network (`configs/wormocr-9M.yaml`): height 48, wider CNN, BiGRU 512, fresh weights, early-stopped at 30,000 steps with the best checkpoint at step 19,000.
 
 ```bash
 wormocr train --config configs/unified.yaml --mode baseline
+wormocr train --config configs/wormocr-9M.yaml --mode baseline
 ```
 
 Any config field can be overridden with `--set section.key=value`. Training writes `best.pt` (lowest validation CER), `last.pt` (newest step, used for resuming), `best_weights.pt` (weights only, for distribution), and `train_log.jsonl`.
@@ -276,9 +281,9 @@ An INT8 export is available (`--format onnx-int8`), but it is **not recommended*
 
 ## How it works
 
-1. **Preprocessing.** The image is converted to grayscale and resized to 32 px tall, keeping its aspect ratio, then normalized to `[-1, 1]`. Batches are padded on the right with the line's own background value.
-2. **Encoder.** A four-stage convolutional network with depthwise-separable convolutions. It pools height from 32 to 2 and width by 4.
-3. **Sequence model.** A linear projection feeds a 2-layer bidirectional GRU. That reads the line left to right and right to left.
+1. **Preprocessing.** The image is converted to grayscale and resized to the model height (32 px for wormocr-2M, 48 px for wormocr-9M), keeping its aspect ratio, then normalized to `[-1, 1]`. Batches are padded on the right with the line's own background value.
+2. **Encoder.** A four-stage convolutional network with depthwise-separable convolutions. It pools height to 2 and width by 4.
+3. **Sequence model.** A linear projection feeds a 2-layer bidirectional GRU (256 hidden units for wormocr-2M, 512 for wormocr-9M). That reads the line left to right and right to left.
 4. **Decoder.** A CTC head over 96 classes, decoded greedily by default. Beam search is optional.
 5. **Page layout** (page mode only). Optional deskew within ±5°, Otsu binarization, horizontal projection profiles to find lines, gutter detection for columns, and top-to-bottom reading order within each column. Boxes are mapped back to the original image.
 
@@ -296,7 +301,7 @@ More detail is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/DATASET
 
 ```text
 wormOCR/
-├── configs/            Model and training configs (unified.yaml produced the released wormocr-2M)
+├── configs/            Model and training configs (unified.yaml → wormocr-2M; wormocr-9M.yaml → wormocr-9M)
 ├── docs/               Architecture, datasets, benchmarks, roadmap
 ├── scripts/            Dataset preparation and benchmark helpers
 ├── src/wormocr/
