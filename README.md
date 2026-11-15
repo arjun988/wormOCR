@@ -74,26 +74,12 @@ ocr = OCR(model="wormocr-9M")
 | Output stride | 4 | 4 |
 | Character set | 95 printable ASCII + CTC blank | Same |
 | Training data | Synthetic print & handwriting, GNHK, names, Bentham, CORD. FUNSD / IAM / RxHand evaluation only | Same mix |
-| Best checkpoint | step 58,000 of 60,000 | step 19,000 (early-stopped at 30,000) |
+
 | Default for `OCR()` | Yes | Pass `model="wormocr-9M"` |
 
 ## Results
 
-Character error rate (CER), greedy decode, NVIDIA RTX 5060 Laptop GPU. wormocr-2M measured 23 October 2026. wormocr-9M measured 6 November 2026 on the same frozen test lines. Lower is better. Older printed-only scores live in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
-
-| Test set | Lines | wormocr-2M | wormocr-9M |
-| --- | ---: | ---: | ---: |
-| Synthetic printed lines | 1,000 | 3.1% | 3.7% |
-| [FUNSD](https://guillaumejaume.github.io/FUNSD/) form words (eval only) | 8,526 | 11.5% | **10.2%** |
-| CORD receipts | 795 | 3.7% | **3.1%** |
-| Synthetic handwriting | 1,000 | 9.2% | **7.1%** |
-| Handwritten form names | 26,170 | **5.3%** | 5.3% |
-| GNHK handwritten notes | 2,410 | 23.3% | **19.2%** |
-| IAM lines (eval only) | 2,915 | 22.4% | **18.3%** |
-| Bentham historical lines | 1,135 | 15.1% | **8.8%** |
-| RxHand words, case-insensitive (eval only) | 1,107 | 37.9% | **35.2%** |
-
-FUNSD, IAM, and RxHand were never used for training.
+wormocr-2M is the default: small, fast, and strong enough for everyday printed lines and many handwritten ones. wormocr-9M is larger and a bit slower; use it when you want more capacity on harder handwriting. Detailed slice scores live in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ### Speed (CPU, wormocr-2M)
 
@@ -106,14 +92,18 @@ Intel Core i9-14900HX, PyTorch 2.14.1, FP32. Medians after warmup (22 October 20
 | Preprocess + model + decode | 1 | 14.4 ms | 69 lines/s |
 | Preprocess + model + decode | 8 | 42.2 ms | 189 lines/s |
 
-wormocr-9M is larger and slower. Use it when the handwriting gains matter more than size.
+### Size and speed vs PaddleOCR
 
-### Training cost
+Same three clean digital pages (invoice, receipt, letter). wormOCR in page mode; PaddleOCR **PP-OCRv6 medium** full pipeline. Size is on-disk weights. Page times are medians after warmup (15 November 2026). Paddle was timed on CPU only (GPU Paddle could not be loaded on this machine).
 
-| Run | Hardware | Steps | Effective batch | Wall time |
-| --- | --- | ---: | ---: | ---: |
-| wormocr-2M | RTX 5060 Laptop, mixed precision | 60,000 | 64 | 125 min |
-| wormocr-9M | RTX 5060 Laptop, mixed precision | 30,000 (best at 19,000) | 64 (16 × 4 accum) | about 150 min |
+| | wormocr-2M | wormocr-9M | PP-OCRv6 medium |
+| --- | ---: | ---: | ---: |
+| Parameters | 2.17M | 8.78M | ~19M recognizer alone; medium family up to ~34.5M |
+| Weights on disk | 8.3 MB | 33.5 MB | ~73 MB rec + ~59 MB det ≈ **132 MB** |
+| Page OCR, CPU | **0.60 s**/page | — | **16.0 s**/page |
+| Page OCR, GPU (RTX 5060 Laptop) | **0.22 s**/page | — | not measured here |
+
+Per-page CPU medians: wormOCR 0.93 / 0.60 / 0.34 s; Paddle 16.0 / 13.9 / 59.2 s. Per-page GPU medians (wormOCR): 0.21 / 0.22 / 0.25 s.
 
 ## Installation
 
